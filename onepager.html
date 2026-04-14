@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Darbitex Final — Programmable Arbitrage AMM on Aptos</title>
+<meta name="description" content="Darbitex Final — programmable arbitrage AMM on Aptos. 1 bps LP fee, 10% on measurable surplus, zero admin, 13 independent AI audits across 3 rounds.">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --fg: #e8e8e8;
+    --dim: #888;
+    --mute: #555;
+    --line: #1a1a1a;
+    --hi: #ff8800;
+    --card: #111;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 60px 24px 80px; }
+  h1 { font-size: 42px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .tagline { color: var(--hi); font-size: 16px; margin-bottom: 36px; letter-spacing: 0.01em; }
+  h2 { font-size: 22px; margin: 42px 0 12px; border-top: 1px solid var(--line); padding-top: 30px; letter-spacing: -0.01em; }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  p { margin: 0 0 12px; }
+  code { font-family: var(--mono); background: var(--card); padding: 1px 6px; border-radius: 3px; font-size: 13px; color: #d0d0d0; }
+  strong { color: #fff; }
+  .hi { color: var(--hi); font-weight: 600; }
+  .dim { color: var(--dim); }
+  .mute { color: var(--mute); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 32px 0; }
+  .box { background: var(--card); border: 1px solid var(--line); padding: 18px 14px; text-align: center; border-radius: 4px; }
+  .big { font-size: 32px; font-weight: 700; color: #fff; }
+  .label { font-size: 10px; color: var(--dim); letter-spacing: 0.12em; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 10px 12px; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+  td code { font-size: 12px; }
+  .links { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+  .links a { background: var(--card); border: 1px solid var(--line); padding: 10px 16px; color: var(--fg); text-decoration: none; border-radius: 4px; font-size: 14px; transition: border-color 0.15s; }
+  .links a:hover { border-color: var(--hi); }
+  .addr { font-family: var(--mono); font-size: 12px; word-break: break-all; background: var(--card); padding: 8px 12px; border-radius: 3px; border: 1px solid var(--line); display: inline-block; }
+  .disclaimer { margin-top: 50px; padding: 20px; border-top: 1px solid var(--line); text-align: center; font-size: 11px; color: var(--mute); line-height: 1.8; }
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+    h1 { font-size: 32px; }
+    .wrap { padding: 40px 18px 60px; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<h1>Darbitex Final</h1>
+<div class="tagline">Programmable Arbitrage AMM on Aptos — 1 bps LP fee · smart routing + cycle closure + flash arb · zero admin</div>
+
+<div class="grid">
+  <div class="box"><div class="big">1</div><div class="label">BPS LP FEE</div></div>
+  <div class="box"><div class="big">3</div><div class="label">CORE MODULES</div></div>
+  <div class="box"><div class="big">13</div><div class="label">AUDIT PASSES</div></div>
+  <div class="box"><div class="big">0</div><div class="label">ADMIN FUNCTIONS</div></div>
+</div>
+
+<h2>What is Darbitex Final?</h2>
+<p>
+  Darbitex Final is a <strong>programmable arbitrage AMM</strong> on <strong>Aptos</strong>. It pairs an immutable
+  <code>x × y = k</code> pool primitive with an opinionated routing layer that ships <span class="hi">smart
+  multi-hop swaps, real-capital cycle closure, and flash-loan triangle arbitrage</span> as first-class on-chain
+  operations. The protocol takes <span class="hi">10% of measurable surplus</span> over the canonical direct
+  baseline — and nothing when there is no baseline to improve on.
+</p>
+<p>
+  Final is a clean-slate successor to Darbitex Beta, not an upgrade. Beta's hook-NFT-at-birth system is removed.
+  The pool layer is stripped to pure primitives and a new <code>arbitrage</code> module delivers the programmable
+  routing surface. Beta remains LIVE at its own address; Final is an independent package.
+</p>
+
+<h2>Mainnet — LIVE</h2>
+<p><strong>Package address (= publisher multisig):</strong></p>
+<div class="addr">0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd</div>
+<p style="margin-top: 14px"><strong>Treasury (hardcoded Move constant):</strong></p>
+<div class="addr">0xdbce89113a975826028236f910668c3ff99c8db8981be6a448caa2f8836f9576</div>
+<p style="margin-top: 14px" class="dim">
+  Published 2026-04-14 via a bootstrap 1-of-5 multisig, raised to <strong>3-of-5</strong> immediately after
+  <code>init_factory</code>. Factory initialized, permissionless pool creation live. 13 audit passes across 3
+  rounds, 5/5 R3 auditors GREEN. No pools yet — <code>create_canonical_pool</code> is open to any wallet with
+  seed FA.
+</p>
+
+<h2>The 10% Rule — Only on Measurable Surplus</h2>
+<p>
+  Darbitex Final charges <span class="hi">10%</span> only on <strong>measurable surplus</strong>: the delta
+  between what a routed trade actually produced and what a direct canonical pool swap would have produced for
+  the same input. If the user swaps $1 and receives $1, we take <strong>nothing</strong>. If the user swaps $1
+  and receives $1.10 thanks to smart routing, we take $0.01.
+</p>
+<p>
+  <strong>No baseline = no charge.</strong> If the canonical direct pool doesn't exist, there is no reference
+  point, so the entire output goes to the caller. Darbitex refuses to tax trades where it is the only available
+  path — a policy enforced in code, not convention. The guard lives in every composable surface:
+  <code>execute_path_compose</code>, <code>swap_compose</code>, <code>close_triangle_compose</code>, and
+  <code>close_triangle_flash_compose</code>.
+</p>
+<p>
+  The 1 bps swap fee on the underlying pool primitive goes <strong>100% to LPs</strong> via the MasterChef V2
+  per-share accumulator. There is no passive protocol fee slot.
+</p>
+
+<h2>Four Execution Surfaces</h2>
+<p>
+  The <code>arbitrage</code> module exposes four programmable execution surfaces, each available as an
+  FA-in/FA-out composable primitive and as a user-facing <code>entry</code> wrapper:
+</p>
+<table>
+  <thead><tr><th>Surface</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>execute_path</code></td><td>Smart multi-hop swap along a pre-computed optimal path</td></tr>
+    <tr><td><code>swap</code></td><td>Auto-routed in→out swap; finds the best path internally</td></tr>
+    <tr><td><code>close_triangle</code></td><td>Real-capital cycle closure — user provides seed capital to rebalance a triangle</td></tr>
+    <tr><td><code>close_triangle_flash</code></td><td>Flash-borrow → cycle → repay, zero up-front capital</td></tr>
+  </tbody>
+</table>
+<p>
+  Path and cycle search use a bounded DFS with <code>DFS_VISIT_BUDGET = 256</code>, <code>MAX_HOPS = 4</code>,
+  and <code>MAX_CYCLE_LEN = 5</code> — enough to cover all realistic retail arbitrage routes while making gas
+  DoS structurally impossible. Candidate pools are fetched via <span class="hi">lazy pagination</span>: one
+  10-pool page at a time, budget decremented per candidate, with the remaining budget safely threaded through
+  nested cycle searches.
+</p>
+
+<h2>Three-Tier Composable API</h2>
+<p>
+  Every arbitrage surface ships in three layers for maximum Move interoperability:
+</p>
+<p>
+  <strong>Tier 1 — Entry wrapper.</strong> <code>public entry fun</code>. Takes <code>&amp;signer</code>,
+  <code>min_net_profit</code>, deadline, and metadata. Withdraws from primary stores, runs the operation,
+  deposits results. For direct wallet transactions.
+</p>
+<p>
+  <strong>Tier 2 — Compose (FA-in / FA-out).</strong> <code>public fun</code>. Takes a
+  <code>FungibleAsset</code>, returns a <code>FungibleAsset</code>. No signer, no stores. Satellite packages
+  compose this layer via cross-package <code>use darbitex::arbitrage</code>. The FA in the caller's hand is
+  itself proof of authorization — Move's type system enforces it.
+</p>
+<p>
+  <strong>Tier 3 — View quote.</strong> <code>#[view]</code>. Simulates the operation against current state
+  and returns the projected output + treasury cut. Frontend and off-chain routers read this directly from RPC.
+</p>
+
+<h2>Immutable Pool Primitive</h2>
+<p>
+  <code>pool.move</code> is <strong>zero admin surface</strong>. No <code>pause</code>, no
+  <code>set_fee</code>, no <code>withdraw_protocol_fee</code>, no upgrade hatch that can change pool state.
+  Every operation — <code>swap</code>, <code>add_liquidity</code>, <code>remove_liquidity</code>,
+  <code>claim_lp_fees</code>, <code>flash_borrow</code>, <code>flash_repay</code> — is free of any admin gate.
+</p>
+<p>
+  Swap math uses <code>u256</code> intermediates. The <code>k_after &gt;= k_before</code> invariant is enforced
+  on every mutation including flash repay. Treasury cut arithmetic widens to <code>u128</code> to rule out any
+  overflow on whale-scale surpluses.
+</p>
+
+<h2>LP as NFT</h2>
+<p>
+  LP positions are Aptos objects. <code>add_liquidity</code> uses Uniswap V2 router-style optimal amount
+  computation — any slippage buffer you provide stays in your wallet if it isn't needed.
+  <code>claim_lp_fees</code> harvests accrued fees without touching principal, and
+  <code>remove_liquidity</code> burns the position for proportional reserves plus unclaimed fees in one shot.
+  Positions are freely transferable.
+</p>
+
+<h2>Universal Flash Loans</h2>
+<p>
+  Every pool supports flash loans at the same 1 bps rate. Flash receipts are
+  <span class="hi">hot-potato structs</span> with no abilities — they must be consumed by
+  <code>flash_repay</code> in the same transaction or the TX aborts. <code>close_triangle_flash</code> uses
+  this internally to close rebalancing cycles with zero up-front capital.
+</p>
+
+<h2>Architecture — 3 modules, 2223 LoC</h2>
+<table>
+  <thead><tr><th>Module</th><th>LoC</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>pool</code></td><td>815</td><td><code>x × y = k</code> AMM primitive, 1 bps LP fee, flash loan, LP NFTs</td></tr>
+    <tr><td><code>pool_factory</code></td><td>244</td><td>Canonical pool creation, <code>asset_index</code> reverse lookup, paginated readers</td></tr>
+    <tr><td><code>arbitrage</code></td><td>1150</td><td>Programmable routing: smart swap, cycle closure, flash triangles, three-tier API</td></tr>
+  </tbody>
+</table>
+<p class="mute">
+  The factory's <code>canonical_pool_address_of(in, out)</code> is O(1) and is used by every arbitrage surface
+  to compute the direct baseline for the 10% rule.
+</p>
+
+<h2>Audit — 13 Passes Across 3 Rounds</h2>
+<p>
+  Final went through <strong>3 audit rounds with 13 independent AI auditor passes</strong>: Gemini 2.5 Pro (R1
+  + R3), Grok 4, Qwen, Kimi K2 (R1 + R3), DeepSeek (R1 + R3), ChatGPT GPT-5 (R1 + R2), fresh Claude Opus 4.6
+  web (R2 + R3), in-session Claude, and Perplexity. A total of <strong>14 actionable fixes</strong> were
+  applied across the rounds:
+</p>
+<p>
+  <strong>Round 1 (R1 + R1.5):</strong> 8 fixes including LP fee accumulator tightening, flash repay excess
+  donation policy, dead <code>E_SAME_TOKEN</code> removal, doc comment placement, and canonicalization of the
+  swap entrypoint against baseline manipulation.
+</p>
+<p>
+  <strong>Round 2 (R2.1 + R2.2):</strong> 3 fixes. <span class="hi">R2.1 HIGH</span> — Gemini caught a
+  zero-baseline tax bug in <code>swap_compose</code>; fixed by mirroring the "no baseline = no charge" guard
+  from <code>execute_path_compose</code>. <span class="hi">R2.2 HIGH</span> — DoS vector via
+  <code>fetch_all_sister_pools</code>; fixed by inlining lazy-paginated DFS with per-candidate budget decrement
+  in both <code>dfs_path</code> and <code>dfs_cycle</code>.
+</p>
+<p>
+  <strong>Round 3 (R3.1):</strong> 3 fixes. Claude R3 caught that the outer loop of
+  <code>find_best_flash_triangle</code> didn't decrement the shared budget per candidate; fixed by threading
+  <code>&amp;mut budget</code> through. Kimi R3 caught that treasury-cut math could overflow <code>u64</code>
+  on whale surpluses; fixed by widening to <code>u128</code>. Stale comment cleanup in pool.
+</p>
+<p>
+  <strong>Final verdict:</strong> all 5 R3 auditors returned <strong class="hi">🟢 GREEN</strong>. Gemini — the
+  most adversarial auditor throughout — concluded: <em>"The architecture is clean, the fallback logic is
+  flawless, and the protection mechanisms against both economic manipulation and execution-halting DoS are
+  mathematically sound. Proceed to publish."</em>
+</p>
+<p class="mute">Audits are aids, not guarantees. Read the code.</p>
+
+<h2>Fully Decentralized</h2>
+<p>Darbitex Final has <strong>no servers</strong>:</p>
+<p>
+  <strong>Smart contracts</strong> — on Aptos mainnet, published from a 3-of-5 multisig.
+  <code>upgrade_policy = "compatible"</code> during a 3–6 month soak, then flipped to
+  <code>immutable</code>.
+</p>
+<p>
+  <strong>Frontend</strong> — to be hosted on <span class="hi">Walrus</span> (decentralized storage on Sui).
+</p>
+<p>
+  <strong>Backend</strong> — there is none. All state lives on-chain; pools, reserves, routes, and quotes are
+  read directly from Aptos RPC.
+</p>
+
+<h2>Governance</h2>
+<p>
+  Final is published from a <strong>3-of-5 multisig</strong> at the same address as the package (Aptos
+  unifies publisher and package). Owners 1–4 are preserved from Beta; owner 5 is a new hot wallet replacing
+  the frozen Beta alpha wallet.
+</p>
+<p>
+  <code>TREASURY</code> is a hardcoded Move constant identical to the Beta treasury multisig. Changing it
+  would require a package upgrade, which itself requires the 3-of-5 threshold. <code>TREASURY_BPS = 1_000</code>
+  (10%) is also hardcoded. Minimum-trust by design.
+</p>
+
+<h2>For Builders</h2>
+<p>
+  <strong>Pool creators</strong> — call
+  <code>pool_factory::create_canonical_pool(creator, meta_a, meta_b, amount_a, amount_b)</code>.
+  Permissionless. You receive the initial LP position.
+</p>
+<p>
+  <strong>Aggregators</strong> — enumerate via <code>pool_factory::get_all_pools()</code>, quote via
+  <code>arbitrage::view_*</code> functions, and compose via the Tier-2 <code>public fun</code> primitives:
+  <code>arbitrage::swap_compose()</code>, <code>execute_path_compose()</code>,
+  <code>close_triangle_compose()</code>, <code>close_triangle_flash_compose()</code>.
+</p>
+<p>
+  <strong>LPs</strong> — <code>pool::add_liquidity()</code> with auto-optimal buffering,
+  <code>pool::claim_lp_fees()</code> without withdrawing, <code>pool::remove_liquidity()</code> with slippage
+  floors.
+</p>
+<p>
+  <strong>Satellite packages</strong> — Final's three-tier composability means future features (meta-routers,
+  farming, external-venue bridges) ship as independent packages depending on Final core via cross-package
+  <code>use darbitex::arbitrage</code>. No core upgrade needed.
+</p>
+
+<h2>Links</h2>
+<div class="links">
+  <a href="https://explorer.aptoslabs.com/account/0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd/modules/code/arbitrage?network=mainnet" target="_blank" rel="noopener noreferrer">Final Package</a>
+  <a href="https://github.com/darbitex/final" target="_blank" rel="noopener noreferrer">Source Code</a>
+  <a href="https://github.com/darbitex/final/blob/main/docs/AUDIT-FINAL-SUBMISSION.md" target="_blank" rel="noopener noreferrer">Audit Packet</a>
+  <a href="https://github.com/darbitex/final/blob/main/docs/AUDIT-FINAL-REPORT.md" target="_blank" rel="noopener noreferrer">Audit Report</a>
+  <a href="https://github.com/darbitex/beta" target="_blank" rel="noopener noreferrer">Beta (predecessor)</a>
+</div>
+
+<div class="disclaimer">
+  <strong style="color: #ff8800">Disclaimer:</strong> Experimental DeFi software.
+  <strong>Use at your own discretion.</strong> Do not deposit more than you can afford to lose. Darbitex Final
+  is LIVE on Aptos mainnet; no pools exist yet and a Final-native frontend is being built.
+</div>
+
+</main>
+</body>
+</html>
