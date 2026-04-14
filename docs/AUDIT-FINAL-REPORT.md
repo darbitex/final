@@ -186,6 +186,73 @@ These are documented in §8 of the submission and accepted by all R3 auditors:
 
 ---
 
+## Prior art & fair comparison — CoW Protocol
+
+The "10% of measurable surplus" economic model has meaningful prior art on EVM that the audit round and marketing materials initially failed to credit. This section corrects that record.
+
+### CoW Protocol (Ethereum, live since 2024)
+
+CoW Swap, via CoW Protocol, has charged a surplus-based fee since mid-2024:
+
+- **50% of quote improvement on market orders**, capped at 0.98% of total order volume (`min(surplus × 0.5, volume × 0.0098)`)
+- **50% of surplus on out-of-market limit orders**, same volume cap
+- Additional **2 bps volume fee** on all orders as floor
+- Baseline = RFQ-style quote produced by the solver network off-chain, not an on-chain canonical pool
+
+CoW Protocol routes user intents through a **solver auction** (off-chain), then settles winning solver's batch on-chain via Programmable Settlement contract. Documented and live at >$33B cumulative volume.
+
+**Darbitex Final is not the first DEX to tax surplus instead of volume.** CoW did it first on EVM two years ago.
+
+### What remains distinct in Darbitex Final
+
+The economic model is inspired-by-prior-art; the **implementation architecture** is a distinct construction that has no known precedent on Aptos, Sui, or (to our knowledge) EVM:
+
+1. **Pure on-chain pathfinding.** Final runs bounded-DFS route discovery inside the Move VM as part of the caller's transaction. CoW depends on an off-chain solver network. Final needs zero external infrastructure; CoW needs a running solver ecosystem.
+
+2. **Canonical-pool baseline computed on-chain.** Final derives `canonical_pool_address_of(in, out)` as a pure function and reads the direct-pool quote as the reference. CoW uses solver-produced RFQ quotes off-chain. Different primitives with different trust assumptions — Final's is deterministic and verifiable; CoW's is more expressive but depends on honest solvers.
+
+3. **10% rate, uncapped, no volume floor.** CoW takes 50% of surplus + 2 bps volume. Final takes 10% of surplus only, and literally zero when routing equals the canonical baseline. Lower revenue per trade, more aggressive user-friendliness.
+
+4. **Flash-loan triangle closure as protocol primitive.** CoW's solvers can flash-borrow internally, but `close_triangle_flash` is not a user-facing primitive anywhere on CoW. On Final, any wallet can call `arbitrage::close_triangle_flash_entry` directly.
+
+5. **Composable from other Move contracts.** `arbitrage::*_compose` functions are FA-in / FA-out library primitives that satellite packages can `use darbitex::arbitrage` and wrap. CoW is end-user-facing and not callable as a library from another contract.
+
+6. **Move type safety.** Hot potato `FlashReceipt`, FA linear types, compile-time invariants. CoW enforces invariants in runtime Solidity.
+
+### Fair strengths of CoW that Final does NOT have
+
+- **Battle-tested at scale** (>$33B volume, 2+ years production) vs Final (zero volume, day 1)
+- **MEV protection via batch auction** — same-batch orders settle at uniform clearing price, front-run impossible. Final runs in normal Aptos tx pool and is subject to standard MEV.
+- **Coincidence-of-Wants matching** — two user orders going opposite directions can match each other with zero AMM fee and zero slippage. Final always routes through pools.
+- **Solver competition** — multiple solvers compete per batch with any pathfinding algorithm they choose. Final is locked into a single DFS implementation; route quality depends on one algorithm.
+- **Sophisticated pathfinding without gas constraints.** Solvers explore deep route graphs (Bellman-Ford, ML, multi-split) off-chain. Final is hard-capped by `DFS_VISIT_BUDGET = 256`, `MAX_HOPS = 4`, `MAX_CYCLE_LEN = 5` — Gemini R3 explicitly flagged this as "sub-optimal routing in mature ecosystems".
+- **Intent-based UX** — user signs "sell X for at least Y", solver handles the rest. Final requires explicit FA-in / FA-out / min / deadline.
+- **User pays gas only on successful execution** — failed CoW auctions = no gas. Final tx revert still consumes gas.
+- **Partial fills** — CoW solvers can split and partial-fill. Final reverts if the chosen path can't cover the full amount.
+
+### Fair weaknesses of Final that CoW does NOT have
+
+- **No MEV protection.** Structural. Large Final trades on a mature market will suffer sandwich / front-run.
+- **On-chain DFS is gas-expensive and budget-bounded.** 256 visit budget is small; in dense graphs DFS exhausts before finding deep paths.
+- **Lazy pagination order-sensitive.** Sister pools earlier in `asset_index` get more DFS budget than those later. Pool creation order subtly influences route quality. Not a correctness bug — a routing-quality footgun.
+- **Canonical baseline manipulable by draining canonical pool.** If an actor deliberately drains the canonical direct pool, the baseline becomes artificially bad, the "surplus" becomes artificially large, and treasury cut inflates. This does not harm the user (they still receive more than they would have on the drained canonical pool), but it makes treasury revenue quality noisy. CoW's off-chain RFQ baseline is not manipulable this way.
+- **No cross-user matching.** Two Final users swapping opposite directions both go through pools and both pay LP fee. CoW would match them directly and save both sides tens of bps.
+- **No intent abstraction.** User has to know in/out/min/deadline explicitly.
+- **First-mover curse.** Route quality depends on pool graph density. Final currently has **zero pools**. Even at 10 pools, DFS will find very few non-trivial multi-hop routes.
+- **No concentrated liquidity.** Pure x·y·k. Stable-pair capital efficiency is far worse than CLMM venues.
+
+### Honest conclusion
+
+**Darbitex Final is not the first DEX to tax surplus.** It is:
+
+> A CoW-Protocol-style surplus economic model, implemented with purely on-chain routing (no solver dependency), on Move (no precedent), with flash-triangle closure as a first-class user primitive (no precedent), optimized for lower cut (10% vs 50%) at the cost of no MEV protection and bounded pathfinding depth.
+
+Final occupies a distinct niche — lightweight, trustless, composable, zero-infra — that is genuinely different from CoW's heavyweight solver-based architecture, but it is not a superset of CoW and not a strict improvement. Users who need MEV protection, deep pathfinding, or intent-based UX should use CoW. Users who need an on-chain Move primitive they can compose from other contracts, operating with zero off-chain infrastructure, should use Final.
+
+Both approaches are legitimate. The claim moving forward is not "first of its kind" — it is **"CoW-style economics, on-chain native, in Move, with flash-triangle primitive."**
+
+---
+
 ## What's next
 
 - ⏳ **Pool creation** (permissionless via `pool_factory::create_canonical_pool`) — pending FA token seeding to a creator wallet

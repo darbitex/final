@@ -96,6 +96,14 @@
   the same input. If the user swaps $1 and receives $1, we take <strong>nothing</strong>. If the user swaps $1
   and receives $1.10 thanks to smart routing, we take $0.01.
 </p>
+<p class="mute">
+  <strong>Prior art:</strong> the surplus-based fee concept is not new — CoW Protocol on Ethereum has
+  charged a surplus-based fee since 2024 (50% of quote improvement, capped at 98 bps of volume, via an
+  off-chain solver auction). Final's economic model is inspired by CoW; what is distinct here is the
+  implementation: pure on-chain DFS pathfinding in Move with no solver dependency, a 10% rate with no volume
+  floor, and flash-loan triangle closure as a first-class user primitive. See
+  <code>docs/AUDIT-FINAL-REPORT.md § Prior art</code> for the full fair comparison.
+</p>
 <p>
   <strong>No baseline = no charge.</strong> If the canonical direct pool doesn't exist, there is no reference
   point, so the entire output goes to the caller. Darbitex refuses to tax trades where it is the only available
