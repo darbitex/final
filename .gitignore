@@ -1,6 +1,9 @@
 # Aptos Move build artifacts
 build/
 
+# Aptos CLI profile with private key — NEVER commit
+.aptos/
+
 # Editor / OS
 .DS_Store
 *.swp
