@@ -2,6 +2,7 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
 import { PACKAGE, QUOTE_DEBOUNCE_MS, TOKENS, type TokenConfig } from "../config";
 import { useFaBalance } from "../chain/balance";
+import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
 import { useAddress } from "../wallet/useConnect";
@@ -24,6 +25,7 @@ export function SwapPage() {
 
   const balIn = useFaBalance(tokenIn.meta, tokenIn.decimals);
   const balOut = useFaBalance(tokenOut.meta, tokenOut.decimals);
+  const aptPrice = useAptPriceUsd();
   const [quoting, setQuoting] = useState(false);
   const [quote, setQuote] = useState<{ pools: string[]; outRaw: bigint } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +114,11 @@ export function SwapPage() {
 
   const outDisplay = quote ? fromRaw(quote.outRaw, tokenOut.decimals).toFixed(6) : "—";
 
+  const inNum = Number(amountIn);
+  const inUsd = usdValueOf(inNum, tokenIn.symbol, aptPrice);
+  const outNum = quote ? fromRaw(quote.outRaw, tokenOut.decimals) : 0;
+  const outUsd = quote ? usdValueOf(outNum, tokenOut.symbol, aptPrice) : null;
+
   return (
     <div className="container">
       <h1 className="page-title">Swap</h1>
@@ -138,6 +145,7 @@ export function SwapPage() {
               side="in"
             />
           </div>
+          {inUsd !== null && <div className="usd-value">≈ {formatUsd(inUsd)}</div>}
           {connected && (
             <button
               type="button"
@@ -165,6 +173,7 @@ export function SwapPage() {
               side="out"
             />
           </div>
+          {outUsd !== null && <div className="usd-value">≈ {formatUsd(outUsd)}</div>}
           {connected && (
             <div className="bal-static">
               Balance: {balOut.loading ? "…" : balOut.formatted.toFixed(6)} {tokenOut.symbol}

@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useMemo, useState } from "react";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
+import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
 
@@ -17,6 +18,7 @@ type CycleQuote = {
 export function ArbitragePage() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
+  const aptPrice = useAptPriceUsd();
   const tokenList = useMemo(() => Object.values(TOKENS), []);
 
   const [mode, setMode] = useState<Mode>("flash");
@@ -182,14 +184,37 @@ export function ArbitragePage() {
           {scanning ? "Scanning…" : "Scan for profitable cycle"}
         </button>
 
-        {quote && (
+        {quote && (() => {
+          const outFormatted = fromRaw(quote.outRaw, anchor.decimals);
+          const outUsd = usdValueOf(outFormatted, anchor.symbol, aptPrice);
+          const inputNum = Number(amount);
+          const inUsd = usdValueOf(inputNum, anchor.symbol, aptPrice);
+          const profitFormatted = inputNum > 0 ? outFormatted - inputNum : 0;
+          const profitUsd =
+            outUsd !== null && inUsd !== null ? outUsd - inUsd : null;
+          return (
           <div className="quote-box">
             <div>
               <span className="dim">Expected output</span>
               <strong>
-                {fromRaw(quote.outRaw, anchor.decimals).toFixed(6)} {anchor.symbol}
+                {outFormatted.toFixed(6)} {anchor.symbol}
+                {outUsd !== null && (
+                  <span className="usd-inline"> · {formatUsd(outUsd)}</span>
+                )}
               </strong>
             </div>
+            {profitFormatted !== 0 && (
+              <div>
+                <span className="dim">Gross delta</span>
+                <strong>
+                  {profitFormatted > 0 ? "+" : ""}
+                  {profitFormatted.toFixed(6)} {anchor.symbol}
+                  {profitUsd !== null && (
+                    <span className="usd-inline"> · {formatUsd(profitUsd)}</span>
+                  )}
+                </strong>
+              </div>
+            )}
             <div>
               <span className="dim">Cycle length</span>
               <strong>{quote.pools.length} hops</strong>
@@ -203,7 +228,8 @@ export function ArbitragePage() {
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {error && <div className="err">{error}</div>}
 

@@ -7,6 +7,7 @@ import {
   TREASURY_BPS,
   type TokenConfig,
 } from "../config";
+import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
 import { useAddress } from "../wallet/useConnect";
@@ -28,6 +29,7 @@ export function AggregatorPage() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
   const [slippage] = useSlippage();
+  const aptPrice = useAptPriceUsd();
   const tokenList = useMemo(() => Object.values(TOKENS), []);
 
   const [tokenIn, setTokenIn] = useState<TokenConfig>(TOKENS.APT);
@@ -184,6 +186,11 @@ export function AggregatorPage() {
               ))}
             </select>
           </div>
+          {(() => {
+            const n = Number(amountIn);
+            const u = usdValueOf(n, tokenIn.symbol, aptPrice);
+            return u !== null ? <div className="usd-value">≈ {formatUsd(u)}</div> : null;
+          })()}
         </div>
         <div className="swap-row">
           <label>Output token</label>
@@ -213,6 +220,12 @@ export function AggregatorPage() {
         {quotes.length === 0 && <div className="venue-empty">Enter an amount to quote</div>}
         {quotes.map((q) => {
           const isBest = best && q.venue === best.venue;
+          const outFormatted = q.loading || q.error || q.outRaw === 0n
+            ? null
+            : fromRaw(q.outRaw, tokenOut.decimals);
+          const outUsd = outFormatted !== null
+            ? usdValueOf(outFormatted, tokenOut.symbol, aptPrice)
+            : null;
           return (
             <div key={q.venue} className={`venue-row ${isBest ? "best" : ""}`}>
               <span className="venue-name">{q.venue}</span>
@@ -226,7 +239,10 @@ export function AggregatorPage() {
                     ? "—"
                     : q.outRaw === 0n
                       ? "no route"
-                      : fromRaw(q.outRaw, tokenOut.decimals).toFixed(6)}
+                      : outFormatted!.toFixed(6)}
+                {outUsd !== null && (
+                  <span className="usd-inline"> · {formatUsd(outUsd)}</span>
+                )}
               </span>
             </div>
           );

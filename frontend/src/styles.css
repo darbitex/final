@@ -925,3 +925,17 @@ a:hover { text-decoration: underline; }
   padding: 8px 0;
   font-size: 12px;
 }
+
+/* USD value display — subtle under-line on Swap/Aggregator inputs. */
+.usd-value {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+  letter-spacing: 0.01em;
+}
+.usd-inline {
+  color: #888;
+  font-weight: 400;
+  font-size: 11px;
+  margin-left: 4px;
+}
