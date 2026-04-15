@@ -26,6 +26,61 @@ export async function fetchFaBalance(owner: string, metadata: string): Promise<b
   }
 }
 
+// FA metadata resolver for custom tokens pasted by the user (outside
+// the TOKENS whitelist). Reads `0x1::fungible_asset::Metadata` resource
+// directly. Returns null on any failure — the UI must handle fallback.
+type FaMetadataResource = {
+  symbol?: string;
+  name?: string;
+  decimals?: number | string;
+};
+
+export type ResolvedFaMetadata = {
+  meta: string;
+  symbol: string;
+  decimals: number;
+  name?: string;
+};
+
+const META_CACHE = new Map<string, ResolvedFaMetadata>();
+
+// Pre-populate the metadata cache from the TOKENS whitelist so the
+// common case (Pool resource with one of the whitelisted FA metadata
+// addresses as metadata_a/metadata_b) resolves without an RPC round-
+// trip. Custom FA tokens still fetch on first resolve.
+import { TOKENS as WHITELIST_TOKENS } from "../config";
+for (const t of Object.values(WHITELIST_TOKENS)) {
+  META_CACHE.set(t.meta.toLowerCase(), {
+    meta: t.meta,
+    symbol: t.symbol,
+    decimals: t.decimals,
+  });
+}
+
+export async function fetchFaMetadata(
+  metadata: string,
+): Promise<ResolvedFaMetadata | null> {
+  const key = metadata.toLowerCase();
+  const cached = META_CACHE.get(key);
+  if (cached) return cached;
+  try {
+    const d = await rpc.rotatedGetResource<FaMetadataResource>(
+      metadata,
+      "0x1::fungible_asset::Metadata",
+    );
+    const resolved: ResolvedFaMetadata = {
+      meta: metadata,
+      symbol: d?.symbol || `${metadata.slice(0, 6)}…`,
+      decimals: Number.parseInt(String(d?.decimals ?? "0"), 10) || 0,
+      name: d?.name,
+    };
+    META_CACHE.set(key, resolved);
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
 export type FaBalanceState = {
   raw: bigint;
   formatted: number;

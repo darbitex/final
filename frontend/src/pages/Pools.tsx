@@ -2,25 +2,69 @@ import { useCallback, useEffect, useState } from "react";
 import { AddLiquidityModal, type AddTarget } from "../components/AddLiquidityModal";
 import { CreatePoolModal } from "../components/CreatePoolModal";
 import { RemoveLiquidityModal, type RemoveTarget } from "../components/RemoveLiquidityModal";
-import { INITIAL_POOLS, TOKENS, type PoolSeed } from "../config";
+import { PACKAGE } from "../config";
+import { fetchFaMetadata } from "../chain/balance";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 
 const rpc = createRpcPool("pools");
 
-type PoolRow = PoolSeed & {
-  reserveA?: bigint;
-  reserveB?: bigint;
+type PoolRow = {
+  address: string;
+  symbolA: string;
+  symbolB: string;
+  decA: number;
+  decB: number;
+  reserveA: bigint;
+  reserveB: bigint;
   error?: string;
 };
 
-function symbolDecimals(symbol: string): number {
-  const t = TOKENS[symbol];
-  return t ? t.decimals : 6;
+type PoolResource = {
+  reserve_a: string | number;
+  reserve_b: string | number;
+  lp_supply: string | number;
+  metadata_a: { inner: string };
+  metadata_b: { inner: string };
+};
+
+async function loadPoolRow(addr: string): Promise<PoolRow> {
+  try {
+    const data = await rpc.rotatedGetResource<PoolResource>(
+      addr,
+      `${PACKAGE}::pool::Pool`,
+    );
+    const [metaA, metaB] = await Promise.all([
+      fetchFaMetadata(data.metadata_a.inner),
+      fetchFaMetadata(data.metadata_b.inner),
+    ]);
+    return {
+      address: addr,
+      symbolA: metaA?.symbol ?? "?",
+      symbolB: metaB?.symbol ?? "?",
+      decA: metaA?.decimals ?? 0,
+      decB: metaB?.decimals ?? 0,
+      reserveA: BigInt(String(data.reserve_a ?? "0")),
+      reserveB: BigInt(String(data.reserve_b ?? "0")),
+    };
+  } catch (e) {
+    return {
+      address: addr,
+      symbolA: "?",
+      symbolB: "?",
+      decA: 0,
+      decB: 0,
+      reserveA: 0n,
+      reserveB: 0n,
+      error: (e as Error).message,
+    };
+  }
 }
 
 export function PoolsPage() {
-  const [rows, setRows] = useState<PoolRow[]>(() => INITIAL_POOLS.map((p) => ({ ...p })));
-  const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
+  const [rows, setRows] = useState<PoolRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [addTarget, setAddTarget] = useState<AddTarget | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RemoveTarget | null>(null);
@@ -30,32 +74,39 @@ export function PoolsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (refreshKey === 0) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+    setError(null);
 
     (async () => {
       try {
-        const [all] = await rpc.viewFn<[string[]]>("pool_factory::get_all_pools", [], []);
+        const [all] = await rpc.viewFn<[string[]]>(
+          "pool_factory::get_all_pools",
+          [],
+          [],
+        );
         if (cancelled) return;
-        setDiscoveredCount(all.length);
-      } catch {
-        // fall through to initial seed list
-      }
 
-      const results = await Promise.all(
-        INITIAL_POOLS.map(async (p) => {
-          try {
-            const [resA, resB] = await rpc.viewFn<[string, string]>(
-              "pool::reserves",
-              [],
-              [p.address],
-            );
-            return { ...p, reserveA: BigInt(resA), reserveB: BigInt(resB) };
-          } catch (e) {
-            return { ...p, error: (e as Error).message };
-          }
-        }),
-      );
-      if (cancelled) return;
-      setRows(results);
+        // Parallel Pool-resource reads, throttled by the per-page
+        // semaphore inside rotatedGetResource. Each read yields both
+        // reserves and the metadata_a/metadata_b object addresses in
+        // one round-trip, replacing the old "get_all_pools + N×
+        // pool::reserves" fanout.
+        const loaded = await Promise.all(all.map((addr) => loadPoolRow(String(addr))));
+        if (cancelled) return;
+        setRows(loaded);
+      } catch (e) {
+        if (cancelled) return;
+        setError((e as Error).message);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
     })();
 
     return () => {
@@ -80,50 +131,52 @@ export function PoolsPage() {
         >
           + Create pool
         </button>
-        <button type="button" className="btn btn-secondary" onClick={refresh}>
-          Refresh
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={refresh}
+          disabled={refreshing}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
-      {discoveredCount !== null && (
+      {(loading || refreshing) && rows.length === 0 && (
+        <div className="hint">Loading pools…</div>
+      )}
+      {error && <div className="err">Failed to load pools: {error}</div>}
+      {!loading && rows.length > 0 && (
         <div className="hint">
-          Factory reports <strong>{discoveredCount}</strong> pool
-          {discoveredCount === 1 ? "" : "s"} on-chain.
+          {rows.length} pool{rows.length === 1 ? "" : "s"} on-chain
+          {refreshing ? " · refreshing…" : ""}
         </div>
       )}
 
-      <div className="pool-table">
-        <div className="pool-head">
-          <span>Pair</span>
-          <span>Address</span>
-          <span>Reserves</span>
-          <span>Actions</span>
-        </div>
+      <div className="pool-cards">
         {rows.map((r) => {
-          const decA = symbolDecimals(r.symbolA);
-          const decB = symbolDecimals(r.symbolB);
+          const reserveLine = r.error
+            ? "error"
+            : `${fromRaw(r.reserveA, r.decA).toFixed(4)} ${r.symbolA} / ${fromRaw(r.reserveB, r.decB).toFixed(4)} ${r.symbolB}`;
           return (
-            <div key={r.address} className="pool-row">
-              <span className="pair">
-                {r.symbolA}/{r.symbolB}
-              </span>
-              <span className="addr-short">
+            <div key={r.address} className="pool-card">
+              <div className="pool-card-head">
+                <span className="lp-pair">
+                  {r.symbolA}/{r.symbolB}
+                </span>
                 <a
+                  className="addr-short"
                   href={`https://explorer.aptoslabs.com/account/${r.address}?network=mainnet`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   {r.address.slice(0, 10)}…{r.address.slice(-4)}
                 </a>
-              </span>
-              <span className="reserves">
-                {r.error
-                  ? "error"
-                  : r.reserveA !== undefined && r.reserveB !== undefined
-                    ? `${fromRaw(r.reserveA, decA).toFixed(4)} / ${fromRaw(r.reserveB, decB).toFixed(4)}`
-                    : "…"}
-              </span>
-              <span className="pool-actions">
+              </div>
+              <div className="pool-card-reserves">
+                <span className="dim">Reserves</span>
+                <strong>{reserveLine}</strong>
+              </div>
+              <div className="pool-card-actions">
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -135,7 +188,7 @@ export function PoolsPage() {
                     })
                   }
                 >
-                  Add
+                  Add liquidity
                 </button>
                 <button
                   type="button"
@@ -145,12 +198,14 @@ export function PoolsPage() {
                       poolAddr: r.address,
                       symbolA: r.symbolA,
                       symbolB: r.symbolB,
+                      decA: r.decA,
+                      decB: r.decB,
                     })
                   }
                 >
                   Remove
                 </button>
-              </span>
+              </div>
             </div>
           );
         })}

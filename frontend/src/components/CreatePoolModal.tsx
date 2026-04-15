@@ -1,7 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
-import { useFaBalance } from "../chain/balance";
+import { fetchFaMetadata, useFaBalance } from "../chain/balance";
 import { toRaw } from "../chain/rpc-pool";
 import { Modal } from "./Modal";
 
@@ -14,6 +14,24 @@ function bcsAddrLt(a: string, b: string): boolean {
   return norm(a) < norm(b);
 }
 
+const CUSTOM = "__custom";
+
+type SideState = {
+  symbol: string; // either a TOKENS key or CUSTOM
+  customAddr: string;
+  resolved: TokenConfig | null; // what actually gets submitted
+  resolving: boolean;
+  error: string | null;
+};
+
+const initialSide = (fallback: TokenConfig): SideState => ({
+  symbol: fallback.symbol,
+  customAddr: "",
+  resolved: fallback,
+  resolving: false,
+  error: null,
+});
+
 export function CreatePoolModal({
   open,
   onClose,
@@ -25,21 +43,79 @@ export function CreatePoolModal({
 }) {
   const { signAndSubmitTransaction, connected } = useWallet();
   const tokenList = useMemo(() => Object.values(TOKENS), []);
-  const [tokenA, setTokenA] = useState<TokenConfig>(TOKENS.APT);
-  const [tokenB, setTokenB] = useState<TokenConfig>(TOKENS.USDC);
+
+  const [sideA, setSideA] = useState<SideState>(() => initialSide(TOKENS.APT));
+  const [sideB, setSideB] = useState<SideState>(() => initialSide(TOKENS.USDC));
   const [amountA, setAmountA] = useState("");
   const [amountB, setAmountB] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
 
-  const balA = useFaBalance(tokenA.meta, tokenA.decimals);
-  const balB = useFaBalance(tokenB.meta, tokenB.decimals);
+  const tokA = sideA.resolved;
+  const tokB = sideB.resolved;
 
-  const sameToken = tokenA.meta === tokenB.meta;
+  const balA = useFaBalance(tokA?.meta ?? null, tokA?.decimals ?? 0);
+  const balB = useFaBalance(tokB?.meta ?? null, tokB?.decimals ?? 0);
+
+  const sameToken =
+    !!tokA && !!tokB && tokA.meta.toLowerCase() === tokB.meta.toLowerCase();
+
+  // Resolve custom FA metadata whenever the user pastes a new address.
+  // Debounced lightly via React's natural rerender cycle (no explicit
+  // debounce needed — the input is local state and this effect fires
+  // only on change).
+  function resolveCustom(
+    addr: string,
+    setSide: React.Dispatch<React.SetStateAction<SideState>>,
+  ) {
+    if (!/^0x[0-9a-f]+$/i.test(addr.trim())) {
+      setSide((s) => ({ ...s, resolved: null, error: "Enter a valid 0x… FA metadata address", resolving: false }));
+      return;
+    }
+    setSide((s) => ({ ...s, resolving: true, error: null }));
+    fetchFaMetadata(addr.trim()).then((r) => {
+      if (!r) {
+        setSide((s) => ({ ...s, resolving: false, error: "Not a Fungible Asset Metadata object", resolved: null }));
+        return;
+      }
+      setSide((s) => ({
+        ...s,
+        resolving: false,
+        error: null,
+        resolved: { meta: r.meta, symbol: r.symbol, decimals: r.decimals },
+      }));
+    });
+  }
+
+  useEffect(() => {
+    if (sideA.symbol === CUSTOM) resolveCustom(sideA.customAddr, setSideA);
+  }, [sideA.symbol, sideA.customAddr]);
+
+  useEffect(() => {
+    if (sideB.symbol === CUSTOM) resolveCustom(sideB.customAddr, setSideB);
+  }, [sideB.symbol, sideB.customAddr]);
+
+  function pickSide(
+    setSide: React.Dispatch<React.SetStateAction<SideState>>,
+    value: string,
+  ) {
+    if (value === CUSTOM) {
+      setSide((s) => ({ ...s, symbol: CUSTOM, resolved: null, error: null }));
+    } else {
+      const t = tokenList.find((x) => x.symbol === value);
+      if (t) {
+        setSide({ symbol: value, customAddr: "", resolved: t, resolving: false, error: null });
+      }
+    }
+  }
 
   async function submit() {
     if (!connected) {
       setStatus({ text: "Connect wallet first", error: true });
+      return;
+    }
+    if (!tokA || !tokB) {
+      setStatus({ text: "Both tokens must be resolved first", error: true });
       return;
     }
     if (sameToken) {
@@ -55,13 +131,10 @@ export function CreatePoolModal({
     setBusy(true);
     setStatus(null);
     try {
-      // Sort pair to match the on-chain `assert_sorted` invariant. If
-      // the user picked them in the "wrong" order, we silently swap the
-      // tokens and their amounts together so ratios stay consistent.
-      let mA = tokenA;
-      let mB = tokenB;
-      let amtARaw = toRaw(numA, tokenA.decimals);
-      let amtBRaw = toRaw(numB, tokenB.decimals);
+      let mA = tokA;
+      let mB = tokB;
+      let amtARaw = toRaw(numA, tokA.decimals);
+      let amtBRaw = toRaw(numB, tokB.decimals);
       if (!bcsAddrLt(mA.meta, mB.meta)) {
         [mA, mB] = [mB, mA];
         [amtARaw, amtBRaw] = [amtBRaw, amtARaw];
@@ -90,80 +163,83 @@ export function CreatePoolModal({
     }
   }
 
+  const renderSide = (
+    side: SideState,
+    setSide: React.Dispatch<React.SetStateAction<SideState>>,
+    labelPrefix: string,
+    amount: string,
+    setAmount: (v: string) => void,
+    bal: ReturnType<typeof useFaBalance>,
+  ) => (
+    <>
+      <label>Token {labelPrefix}</label>
+      <select value={side.symbol} onChange={(e) => pickSide(setSide, e.target.value)}>
+        {tokenList.map((t) => (
+          <option key={t.symbol} value={t.symbol}>
+            {t.symbol}
+          </option>
+        ))}
+        <option value={CUSTOM}>Other — paste FA address…</option>
+      </select>
+
+      {side.symbol === CUSTOM && (
+        <>
+          <label>Custom FA metadata address</label>
+          <input
+            type="text"
+            value={side.customAddr}
+            onChange={(e) =>
+              setSide((s) => ({ ...s, customAddr: e.target.value }))
+            }
+            placeholder="0x…"
+            spellCheck={false}
+          />
+          {side.resolving && <div className="modal-note">Resolving metadata…</div>}
+          {side.resolved && !side.resolving && (
+            <div className="modal-note">
+              Resolved: <strong>{side.resolved.symbol}</strong> ·{" "}
+              {side.resolved.decimals} decimals
+            </div>
+          )}
+          {side.error && <div className="modal-status error">{side.error}</div>}
+        </>
+      )}
+
+      <label>
+        Seed amount {labelPrefix}
+        {side.resolved ? ` (${side.resolved.symbol})` : ""}
+      </label>
+      <input
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        min="0"
+        placeholder="0.0"
+        disabled={!side.resolved}
+      />
+      {connected && side.resolved && (
+        <button
+          type="button"
+          className="bal-link bal-link-modal"
+          onClick={() => bal.raw > 0n && setAmount(String(bal.formatted))}
+          disabled={bal.raw === 0n}
+        >
+          Balance: {bal.loading ? "…" : bal.formatted.toFixed(6)} {side.resolved.symbol}
+        </button>
+      )}
+    </>
+  );
+
   return (
     <Modal open={open} onClose={onClose} title="Create canonical pool">
       <div className="modal-note">
-        Permissionless pool creation — any wallet can seed a new canonical pair. The factory
-        rejects duplicates and unsorted metadata automatically; the frontend sorts for you.
+        Permissionless — any wallet can seed any FA pair. Pick from the whitelist or paste a
+        custom FA metadata address; the factory rejects duplicates and unsorted metadata,
+        and the frontend sorts for you.
       </div>
 
-      <label>Token A</label>
-      <select
-        value={tokenA.symbol}
-        onChange={(e) => {
-          const t = tokenList.find((x) => x.symbol === e.target.value);
-          if (t) setTokenA(t);
-        }}
-      >
-        {tokenList.map((t) => (
-          <option key={t.symbol} value={t.symbol}>
-            {t.symbol}
-          </option>
-        ))}
-      </select>
-
-      <label>Seed amount A</label>
-      <input
-        type="number"
-        value={amountA}
-        onChange={(e) => setAmountA(e.target.value)}
-        min="0"
-        placeholder="0.0"
-      />
-      {connected && (
-        <button
-          type="button"
-          className="bal-link bal-link-modal"
-          onClick={() => balA.raw > 0n && setAmountA(String(balA.formatted))}
-          disabled={balA.raw === 0n}
-        >
-          Balance: {balA.loading ? "…" : balA.formatted.toFixed(6)} {tokenA.symbol}
-        </button>
-      )}
-
-      <label>Token B</label>
-      <select
-        value={tokenB.symbol}
-        onChange={(e) => {
-          const t = tokenList.find((x) => x.symbol === e.target.value);
-          if (t) setTokenB(t);
-        }}
-      >
-        {tokenList.map((t) => (
-          <option key={t.symbol} value={t.symbol}>
-            {t.symbol}
-          </option>
-        ))}
-      </select>
-
-      <label>Seed amount B</label>
-      <input
-        type="number"
-        value={amountB}
-        onChange={(e) => setAmountB(e.target.value)}
-        min="0"
-        placeholder="0.0"
-      />
-      {connected && (
-        <button
-          type="button"
-          className="bal-link bal-link-modal"
-          onClick={() => balB.raw > 0n && setAmountB(String(balB.formatted))}
-          disabled={balB.raw === 0n}
-        >
-          Balance: {balB.loading ? "…" : balB.formatted.toFixed(6)} {tokenB.symbol}
-        </button>
-      )}
+      {renderSide(sideA, setSideA, "A", amountA, setAmountA, balA)}
+      {renderSide(sideB, setSideB, "B", amountB, setAmountB, balB)}
 
       {status && (
         <div className={`modal-status ${status.error ? "error" : ""}`}>{status.text}</div>
@@ -173,7 +249,7 @@ export function CreatePoolModal({
         type="button"
         className="btn btn-primary"
         onClick={submit}
-        disabled={busy || sameToken}
+        disabled={busy || sameToken || !tokA || !tokB}
       >
         {busy ? "Submitting…" : "Create pool"}
       </button>

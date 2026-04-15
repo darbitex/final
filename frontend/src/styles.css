@@ -49,13 +49,23 @@ a:hover { text-decoration: underline; }
 
 /* Nav */
 .nav {
-  display: flex; border-bottom: 1px solid #1a1a1a;
+  display: flex;
+  border-bottom: 1px solid #1a1a1a;
   position: sticky; top: 52px; background: #0a0a0a; z-index: 9;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.nav::-webkit-scrollbar { display: none; }
 .nav a {
-  flex: 1; padding: 12px; text-align: center;
-  color: #555; font-size: 13px;
-  border-bottom: 2px solid transparent; transition: all 0.2s;
+  flex: 1 0 auto;
+  padding: 12px 14px;
+  text-align: center;
+  color: #555;
+  font-size: 13px;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
 }
 .nav a:hover { color: #aaa; text-decoration: none; }
 .nav a.active { color: #ff8800; border-bottom-color: #ff8800; }
@@ -448,6 +458,7 @@ a:hover { text-decoration: underline; }
   margin-bottom: 6px;
 }
 .swap-card .swap-row {
+  display: block;
   padding: 0;
   border: none;
   background: transparent;
@@ -776,6 +787,141 @@ a:hover { text-decoration: underline; }
   .protocol-card, .protocol-card.small { grid-column: span 1; }
   .about-grid { grid-template-columns: repeat(2, 1fr); }
   .venue-head, .venue-table .venue-row { grid-template-columns: 1.1fr 0.7fr 1.2fr; }
-  .pool-head, .pool-row { grid-template-columns: 0.9fr 1fr 1fr 1.2fr; font-size: 12px; }
-  .pool-row .pool-actions .btn { padding: 5px 8px; font-size: 11px; }
+
+  /* Pool rows collapse into stacked cards on narrow screens — the
+     4-column grid is unreadable below ~480px. Head row is hidden; each
+     row becomes a vertical card with labels rendered inline via
+     data-label. */
+  .pool-head { display: none; }
+  .pool-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+    border-bottom: 1px solid #151515;
+  }
+  .pool-row > span { text-align: left; display: flex; justify-content: space-between; gap: 10px; }
+  .pool-row .pair { font-size: 14px; font-weight: 600; border-bottom: 1px solid #151515; padding-bottom: 6px; }
+  .pool-row .addr-short,
+  .pool-row .reserves { font-size: 12px; }
+  .pool-row .reserves { color: #ccc; }
+  .pool-row .pool-actions {
+    justify-content: stretch;
+    gap: 8px;
+    padding-top: 6px;
+  }
+  .pool-row .pool-actions .btn {
+    flex: 1 1 0;
+    padding: 8px 0;
+    font-size: 12px;
+  }
+  .tvl-row { flex-direction: row !important; justify-content: space-between !important; }
+}
+
+/* LP position cards on Portfolio */
+.lp-card {
+  background: #111;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.lp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1a1a1a;
+}
+.lp-pair {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+.lp-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.lp-body > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lp-body .dim {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #555;
+}
+.lp-body strong {
+  color: #fff;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  word-break: break-all;
+}
+.lp-actions {
+  display: flex;
+  gap: 8px;
+}
+.lp-actions .btn {
+  flex: 1;
+}
+@media (max-width: 600px) {
+  .lp-body { grid-template-columns: 1fr 1fr; }
+}
+
+/* Pools page — card layout (replaces the old cramped grid-row). Each
+   pool renders as a vertically-stacked card identical in feel to the
+   Portfolio LP position card. */
+.pool-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+.pool-card {
+  background: #111;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.pool-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #1a1a1a;
+  margin-bottom: 10px;
+}
+.pool-card-reserves {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+.pool-card-reserves .dim {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #555;
+}
+.pool-card-reserves strong {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.pool-card-actions {
+  display: flex;
+  gap: 8px;
+}
+.pool-card-actions .btn {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12px;
 }

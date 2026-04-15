@@ -26,11 +26,41 @@ function readRpcOverride(): RpcEndpoint[] {
 }
 
 // Transient = safe to retry on another provider. Rate limits, gateway
-// errors, HTML-under-429 parse failures, browser fetch network errors.
+// errors, browser fetch network errors.
+//
+// IMPORTANT: 404 is deterministic — a missing resource / missing account
+// returns the same answer on every provider, so retrying is pure waste
+// (burns the Geomi budget + falls through to public fallbacks). Same for
+// 400/401/403. Only true "server couldn't process" conditions rotate.
 export function isTransientError(err: unknown): boolean {
-  const asErr = err as { name?: string; message?: string };
+  const asErr = err as { name?: string; message?: string; status?: number };
+
+  // Preferred path: the SDK surfaces the HTTP status code on the thrown
+  // error object. Trust the status code before falling back to message
+  // heuristics — message parsing was historically too permissive and
+  // mis-tagged 404s as transient via the "json"/"unexpected token"
+  // catch-all.
+  if (typeof asErr?.status === "number") {
+    const s = asErr.status;
+    if (s === 429) return true;
+    if (s >= 500 && s <= 599) return true;
+    return false; // 4xx (incl. 404) → deterministic miss, don't rotate
+  }
+
   const msg = String(asErr?.message ?? err).toLowerCase();
   if (asErr?.name === "TypeError" && msg.includes("fetch")) return true;
+
+  // Never rotate on a resource-not-found message, even if the SDK
+  // forgot to attach a status code.
+  if (
+    msg.includes("resource not found") ||
+    msg.includes("resource_not_found") ||
+    msg.includes("not found") ||
+    msg.includes("404")
+  ) {
+    return false;
+  }
+
   return (
     msg.includes("429") ||
     msg.includes("503") ||
@@ -40,13 +70,10 @@ export function isTransientError(err: unknown): boolean {
     msg.includes("too many") ||
     msg.includes("service unavailable") ||
     msg.includes("bad gateway") ||
-    msg.includes("unexpected token") ||
-    msg.includes("json") ||
     msg.includes("failed to fetch") ||
     msg.includes("fetch failed") ||
     msg.includes("networkerror") ||
     msg.includes("load failed") ||
-    msg.includes("network") ||
     msg.includes("timeout") ||
     msg.includes("aborted")
   );

@@ -31,11 +31,14 @@ type PoolResource = {
 
 async function fetchPoolState(poolAddr: string): Promise<PoolState | null> {
   try {
-    const res = await rpc.rotatedGetResource<{ data: PoolResource }>(
+    // Aptos SDK v6 `getAccountResource` returns the struct fields directly,
+    // NOT wrapped in { data: ... }. Beta's chain/tokens.ts uses the same
+    // pattern: `const d = await rotatedGetResource<MetadataResource>(...)`
+    // and accesses `d.symbol` directly.
+    const data = await rpc.rotatedGetResource<PoolResource>(
       poolAddr,
       `${PACKAGE}::pool::Pool`,
     );
-    const data = res.data;
     return {
       reserveA: BigInt(String(data.reserve_a ?? "0")),
       reserveB: BigInt(String(data.reserve_b ?? "0")),
