@@ -61,6 +61,7 @@ async function quote(
     return {
       venue: hit.active ? "Cellana (stable)" : "Cellana (volatile)",
       amountOutRaw: out,
+      route: [hit.active ? "stable curve" : "volatile curve"],
       // No poolAddr — Cellana is queried by asset pair, not pool address.
       // The curve flag is all we need for execution.
     };
@@ -85,6 +86,7 @@ async function quote(
   return {
     venue: active ? "Cellana (stable)" : "Cellana (volatile)",
     amountOutRaw: amountOut,
+    route: [active ? "stable curve" : "volatile curve"],
   };
 }
 

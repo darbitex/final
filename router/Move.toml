@@ -1,0 +1,17 @@
+[package]
+name = "DarbitexRouter"
+version = "0.1.0"
+upgrade_policy = "compatible"
+authors = ["Rera", "Claude (Anthropic)"]
+
+[addresses]
+darbitex_router = "_"
+darbitex = "0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd"
+thala_adapter = "0x583d93de79a3f175f1e3751513b2be767f097376f22ea2e7a5aac331e60f206f"
+darbitex_aggregator = "0x838a981b43c5bf6fb1139a60ccd7851a4031cd31c775f71f963163c49ab62b47"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
+DarbitexFinal = { local = ".." }
+DarbitexThala = { local = "deps/DarbitexThala" }
+DarbitexAggregator = { local = "deps/DarbitexAggregator" }

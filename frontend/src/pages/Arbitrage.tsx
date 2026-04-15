@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
+import { useSlippage } from "../chain/slippage";
 import { useAddress } from "../wallet/useConnect";
 
 const rpc = createRpcPool("arbitrage");
@@ -19,12 +20,14 @@ export function ArbitragePage() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
   const aptPrice = useAptPriceUsd();
+  const [slippage] = useSlippage();
   const tokenList = useMemo(() => Object.values(TOKENS), []);
 
   const [mode, setMode] = useState<Mode>("flash");
   const [anchor, setAnchor] = useState<TokenConfig>(TOKENS.APT);
   const [amount, setAmount] = useState("");
-  const [minNetProfit, setMinNetProfit] = useState("0");
+  const [minNetProfit, setMinNetProfit] = useState("");
+  const [manualOverride, setManualOverride] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [quote, setQuote] = useState<CycleQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,25 @@ export function ArbitragePage() {
     }
   }
 
+  // Derive the slippage-adjusted default min-net-profit from the latest
+  // quote. Flash mode: expected_out IS the profit (no seed). Seed mode:
+  // profit = expected_out − seed. In both cases, apply (1 - slippage) as
+  // a floor so the tx aborts if the realized profit is more than
+  // slippage% below expected.
+  const defaultMinProfitRaw = useMemo<bigint>(() => {
+    if (!quote) return 0n;
+    const numeric = Number(amount);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 0n;
+    const seedRaw = toRaw(numeric, anchor.decimals);
+    const grossProfit =
+      mode === "flash" ? quote.outRaw : quote.outRaw > seedRaw ? quote.outRaw - seedRaw : 0n;
+    if (grossProfit === 0n) return 0n;
+    const slipBps = BigInt(Math.floor((1 - slippage) * 10_000));
+    return (grossProfit * slipBps) / 10_000n;
+  }, [quote, amount, anchor.decimals, mode, slippage]);
+
+  const defaultMinProfitDisplay = fromRaw(defaultMinProfitRaw, anchor.decimals);
+
   async function execute() {
     if (!address || !quote) return;
     setSubmitting(true);
@@ -85,7 +107,11 @@ export function ArbitragePage() {
     try {
       const numeric = Number(amount);
       const raw = toRaw(numeric, anchor.decimals);
-      const minProfitRaw = toRaw(Number(minNetProfit) || 0, anchor.decimals);
+      // Manual override wins; otherwise use the slippage-adjusted default
+      // derived from the latest scan.
+      const minProfitRaw = manualOverride && minNetProfit
+        ? toRaw(Number(minNetProfit) || 0, anchor.decimals)
+        : defaultMinProfitRaw;
       const deadline = Math.floor(Date.now() / 1000) + 300;
 
       const fnName = mode === "flash" ? "close_triangle_flash" : "close_triangle";
@@ -165,14 +191,41 @@ export function ArbitragePage() {
         </div>
 
         <div className="swap-row">
-          <label>Min net profit (after treasury cut)</label>
+          <label>
+            Min net profit (after treasury cut) · {(slippage * 100).toFixed(
+              slippage < 0.01 ? 2 : 1,
+            )}
+            % slippage
+          </label>
           <input
             type="number"
-            value={minNetProfit}
-            onChange={(e) => setMinNetProfit(e.target.value)}
-            placeholder="0.0"
+            value={
+              manualOverride
+                ? minNetProfit
+                : quote
+                  ? defaultMinProfitDisplay.toFixed(6)
+                  : ""
+            }
+            onChange={(e) => {
+              setManualOverride(true);
+              setMinNetProfit(e.target.value);
+            }}
+            placeholder={quote ? "auto from slippage" : "scan first"}
             min="0"
+            disabled={!quote && !manualOverride}
           />
+          {manualOverride && (
+            <button
+              type="button"
+              className="bal-link"
+              onClick={() => {
+                setManualOverride(false);
+                setMinNetProfit("");
+              }}
+            >
+              reset to auto
+            </button>
+          )}
         </div>
 
         <button

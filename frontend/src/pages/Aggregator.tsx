@@ -44,6 +44,7 @@ type QuoteRow =
       label: string;
       adapter: VenueAdapter;
       poolAddr?: string;
+      routeLabel?: string;
       hops: number;
       outRaw: bigint;
       loading: boolean;
@@ -161,6 +162,7 @@ export function AggregatorPage() {
               venue: string;
               amountOutRaw: bigint;
               poolAddr?: string;
+              route?: string[];
               error?: string;
             }
           | null;
@@ -204,6 +206,7 @@ export function AggregatorPage() {
           label: adapter.label,
           adapter,
           poolAddr: result?.poolAddr,
+          routeLabel: result?.route?.[0],
           hops: 1,
           outRaw: result?.amountOutRaw ?? 0n,
           error: result?.error,
@@ -373,9 +376,11 @@ export function AggregatorPage() {
             : r.error
               ? "error"
               : r.kind === "external"
-                ? r.poolAddr
-                  ? "1-hop"
-                  : "—"
+                ? r.routeLabel
+                  ? r.routeLabel
+                  : r.poolAddr
+                    ? "1-hop"
+                    : "—"
                 : `${r.pools.length}-hop`;
           return (
             <div key={r.label} className={`venue-row ${isBest ? "best" : ""}`}>

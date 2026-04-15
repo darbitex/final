@@ -1,0 +1,13 @@
+[package]
+name = "DarbitexThala"
+version = "0.1.0"
+upgrade_policy = "compatible"
+authors = ["Rera", "Claude (Anthropic)"]
+
+[addresses]
+thala_adapter = "_"
+thalaswap_v2 = "0x7730cd28ee1cdc9e999336cbc430f99e7c44397c0aa77516f6f23a78559bb5"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework", rev = "mainnet" }
+ThalaSwapV2 = { local = "deps/ThalaSwapV2" }

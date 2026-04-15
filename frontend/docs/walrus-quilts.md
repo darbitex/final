@@ -23,12 +23,36 @@ Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 1 | `0xbb18ac8c8aae55ef1e08eaeab53cb53733e7398354605a68260e09a6271803d9` | `JsJZqQ-Ma8fnOWuDNEqyH-Zjz9h0KeLc6mFXDrff-V8` | 2.12 MiB | 33 | ~2026-06-22 | full bundle — Thala + Hyperion + Cellana venue adapters wired into Aggregator, About ELI5 rewrite |
+| 1 | `0x95d422b7306332ed81795e225b88ca0be1901e9d0f7ff87efa40d9da9406e615` | `7z1X6Y7THIURenvHJIFJFRdL3g1uCCnPn9_37AKGmc0` | 2.12 MiB | 33 | ~2026-06-22 | polish batch — Cellana route label, Arbitrage slippage wiring, vite bundle split (main chunk 1674 KB → 15 KB), Thala seed comment fix |
 
 Short lease (5 epochs) per the beta SOP. Not funded.
 
+## Archival split — deferred
+
+**Status:** intentionally deferred until feature-freeze of the frontend.
+
+Beta's walrus-quilts SOP calls for a dev/archival split: the working
+site iterates on short 5-epoch leases, and a separate archival site
+object holds a frozen "v1.0 launch" snapshot funded to max lease
+(53 epochs ≈ 2 years) as a permanent fallback.
+
+Not implemented yet for Final because the frontend is still in rapid
+iteration — any archival snapshot we publish now would be stale in a
+few hours. Revisit when:
+
+- Feature work slows to bug-fix-only
+- A deploy candidate is chosen as the canonical "v1.0 launch"
+- The dev/archival split's SuiNS arrangement is decided (separate
+  subdomain like `darbitex-archive.wal.app`? same domain with
+  fallback logic? needs a short spec)
+
+Burden is low when we actually ship it: one `site-builder publish`,
+one `walrus share`, one long-lease `walrus fund-shared-blob`. Costs
+~0.08 WAL for 53 epochs storage on a ~2 MiB bundle.
+
 **Superseded shared quilts:**
-- `0x0130baf88b7b4f311d83b3796c6cecb674d9c3223bee8e5b5e4f9e4a2f232c1b` (blob `HCZcwMsBOuf4tz25kdaAuRkNWbBzaIn_k7eKu4QikpU`) — balance-fix + auto-calc deploy 2026-04-15. Superseded within hours by tagline-fix deploy. Not funded, zero WAL loss.
+- `0xbb18ac8c8aae55ef1e08eaeab53cb53733e7398354605a68260e09a6271803d9` (blob `JsJZqQ-Ma8fnOWuDNEqyH-Zjz9h0KeLc6mFXDrff-V8`) — venue-adapters deploy 2026-04-15. Superseded by polish batch. Not funded, zero WAL loss.
+- `0x0130baf88b7b4f311d83b3796c6cecb674d9c3223bee8e5b5e4f9e4a2f232c1b` (blob `HCZcwMsBOuf4tz25kdaAuRkNWbBzaIn_k7eKu4QikpU`) — balance-fix + auto-calc deploy 2026-04-15. Not funded, zero WAL loss.
 
 **Burned owned blobs:**
 - `0x5b65666cd84670fd74ad9f203d014748c09e5a31159032c09b0743d92cf211c5` (blob `tBm23JeUKeeKHbubQwDvFo3kAJV2WNMyU5YCVkRGxus`) — initial publish quilt. Superseded by the balance-fix update before ever being shared. Burned 2026-04-15, zero WAL loss.

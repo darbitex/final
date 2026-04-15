@@ -31,11 +31,11 @@ export const HYPERION_ACTIVE_TIER = 1;
 // adapter::pool_assets. Adding a new Thala pool means appending its
 // address here — no Move or TypeScript changes required.
 export const THALA_POOL_SEEDS: string[] = [
-  // APT / nUSDC weighted — 5 bps
+  // APT / USDC (native Circle) weighted — 5 bps
   "0xa928222429caf1924c944973c2cd9fc306ec41152ba4de27a001327021a4dff7",
-  // APT / USDt weighted
+  // APT / USDt (native Tether) weighted
   "0x99d34f16193e251af236d5a5c3114fa54e22ca512280317eda2f8faf1514c395",
-  // APT / lzUSDC weighted — 5 bps
+  // APT / lzUSDC (LayerZero-bridged) weighted — 5 bps
   "0x253f970b6a6f071b5fb63d3f16ea2685431a078f62bf98978b37bd0d169ff7c5",
 ];
 
