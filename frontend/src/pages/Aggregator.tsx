@@ -10,6 +10,7 @@ import {
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
+import { EXTERNAL_VENUES, type VenueAdapter } from "../chain/venues";
 import { useAddress } from "../wallet/useConnect";
 
 // Independent pool — Aggregator bursts several parallel quote calls
@@ -17,13 +18,64 @@ import { useAddress } from "../wallet/useConnect";
 // not share a semaphore with Swap or Pools.
 const rpc = createRpcPool("aggregator");
 
-type VenueQuote = {
-  venue: "Darbitex direct" | "Darbitex smart";
-  pools: string[];
-  outRaw: bigint;
-  error?: string;
-  loading: boolean;
-};
+// Unified row shape for the quote table. Darbitex-internal rows are
+// synthetic (no venue adapter), external venues are marshalled through
+// their adapter's quote(). The `kind` discriminator tells submitBest
+// which branch to take when the user hits Execute.
+type QuoteRow =
+  | {
+      kind: "darbitex-direct";
+      label: string;
+      pools: string[];
+      outRaw: bigint;
+      loading: boolean;
+      error?: string;
+    }
+  | {
+      kind: "darbitex-smart";
+      label: string;
+      pools: string[];
+      outRaw: bigint;
+      loading: boolean;
+      error?: string;
+    }
+  | {
+      kind: "external";
+      label: string;
+      adapter: VenueAdapter;
+      poolAddr?: string;
+      hops: number;
+      outRaw: bigint;
+      loading: boolean;
+      error?: string;
+    };
+
+function seedRows(): QuoteRow[] {
+  return [
+    {
+      kind: "darbitex-direct",
+      label: "Darbitex direct",
+      pools: [],
+      outRaw: 0n,
+      loading: true,
+    },
+    {
+      kind: "darbitex-smart",
+      label: "Darbitex smart",
+      pools: [],
+      outRaw: 0n,
+      loading: true,
+    },
+    ...EXTERNAL_VENUES.map<QuoteRow>((v) => ({
+      kind: "external",
+      label: v.label,
+      adapter: v,
+      hops: 1,
+      outRaw: 0n,
+      loading: true,
+    })),
+  ];
+}
 
 export function AggregatorPage() {
   const { signAndSubmitTransaction } = useWallet();
@@ -35,13 +87,21 @@ export function AggregatorPage() {
   const [tokenIn, setTokenIn] = useState<TokenConfig>(TOKENS.APT);
   const [tokenOut, setTokenOut] = useState<TokenConfig>(TOKENS.USDC);
   const [amountIn, setAmountIn] = useState("");
-  const [quotes, setQuotes] = useState<VenueQuote[]>([]);
+  const [rows, setRows] = useState<QuoteRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Warm external venue registries once per mount — they no-op on
+  // subsequent calls.
   useEffect(() => {
-    setQuotes([]);
+    for (const v of EXTERNAL_VENUES) {
+      v.warmup?.().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    setRows([]);
     setError(null);
     const numeric = Number(amountIn);
     if (!Number.isFinite(numeric) || numeric <= 0) return;
@@ -53,12 +113,8 @@ export function AggregatorPage() {
     let cancelled = false;
     const handle = setTimeout(async () => {
       const amountRaw = toRaw(numeric, tokenIn.decimals);
-      setQuotes([
-        { venue: "Darbitex direct", pools: [], outRaw: 0n, loading: true },
-        { venue: "Darbitex smart", pools: [], outRaw: 0n, loading: true },
-      ]);
+      setRows(seedRows());
 
-      // Parallel independent calls — same pool, different functions.
       const direct = rpc
         .viewFn<[string]>(
           "pool_factory::canonical_pool_address_of",
@@ -76,8 +132,11 @@ export function AggregatorPage() {
           );
           return { pools: [String(poolAddr)], outRaw: BigInt(outStr ?? "0") };
         })
-        .then((r) => r)
-        .catch((e: Error) => ({ pools: [] as string[], outRaw: 0n, error: e.message }));
+        .catch((e: Error) => ({
+          pools: [] as string[],
+          outRaw: 0n,
+          error: e.message,
+        }));
 
       const smart = rpc
         .viewFn<[string[], string]>(
@@ -89,13 +148,67 @@ export function AggregatorPage() {
           pools: pools ?? [],
           outRaw: BigInt(outStr ?? "0"),
         }))
-        .catch((e: Error) => ({ pools: [] as string[], outRaw: 0n, error: e.message }));
+        .catch((e: Error) => ({
+          pools: [] as string[],
+          outRaw: 0n,
+          error: e.message,
+        }));
 
-      const [d, s] = await Promise.all([direct, smart]);
+      type ExternalProbe = {
+        adapter: VenueAdapter;
+        result:
+          | {
+              venue: string;
+              amountOutRaw: bigint;
+              poolAddr?: string;
+              error?: string;
+            }
+          | null;
+      };
+      const externalProbes: Promise<ExternalProbe>[] = EXTERNAL_VENUES.map((v) =>
+        v
+          .quote(tokenIn, tokenOut, amountRaw)
+          .then<ExternalProbe>((r) => ({ adapter: v, result: r }))
+          .catch<ExternalProbe>((e: Error) => ({
+            adapter: v,
+            result: {
+              venue: v.label,
+              amountOutRaw: 0n,
+              error: e.message,
+            },
+          })),
+      );
+
+      const [d, s, ...externals] = await Promise.all([
+        direct,
+        smart,
+        ...externalProbes,
+      ]);
       if (cancelled) return;
-      setQuotes([
-        { venue: "Darbitex direct", loading: false, ...d },
-        { venue: "Darbitex smart", loading: false, ...s },
+
+      setRows([
+        {
+          kind: "darbitex-direct",
+          label: "Darbitex direct",
+          loading: false,
+          ...d,
+        },
+        {
+          kind: "darbitex-smart",
+          label: "Darbitex smart",
+          loading: false,
+          ...s,
+        },
+        ...externals.map<QuoteRow>(({ adapter, result }) => ({
+          kind: "external",
+          label: adapter.label,
+          adapter,
+          poolAddr: result?.poolAddr,
+          hops: 1,
+          outRaw: result?.amountOutRaw ?? 0n,
+          error: result?.error,
+          loading: false,
+        })),
       ]);
     }, QUOTE_DEBOUNCE_MS);
 
@@ -106,20 +219,20 @@ export function AggregatorPage() {
   }, [amountIn, tokenIn, tokenOut]);
 
   const best = useMemo(() => {
-    return quotes
-      .filter((q) => !q.loading && !q.error && q.outRaw > 0n)
+    return rows
+      .filter((r) => !r.loading && !r.error && r.outRaw > 0n)
       .sort((a, b) => (b.outRaw > a.outRaw ? 1 : b.outRaw < a.outRaw ? -1 : 0))[0];
-  }, [quotes]);
+  }, [rows]);
 
   const surplus = useMemo(() => {
     if (!best) return null;
-    const direct = quotes.find((q) => q.venue === "Darbitex direct");
+    const direct = rows.find((r) => r.kind === "darbitex-direct");
     if (!direct || direct.outRaw === 0n) return null;
     if (best.outRaw <= direct.outRaw) return { amount: 0n, cut: 0n };
     const amount = best.outRaw - direct.outRaw;
     const cut = (amount * BigInt(TREASURY_BPS)) / 10_000n;
     return { amount, cut };
-  }, [best, quotes]);
+  }, [best, rows]);
 
   async function submitBest() {
     if (!address || !best) return;
@@ -130,21 +243,49 @@ export function AggregatorPage() {
       const amountRaw = toRaw(Number(amountIn), tokenIn.decimals);
       const minOutRaw =
         (best.outRaw * BigInt(Math.floor((1 - slippage) * 1_000_000))) / 1_000_000n;
-      const deadline = Math.floor(Date.now() / 1000) + 300;
-      const result = await signAndSubmitTransaction({
-        data: {
-          function: `${PACKAGE}::arbitrage::swap_entry`,
-          typeArguments: [],
-          functionArguments: [
-            tokenIn.meta,
-            tokenOut.meta,
-            amountRaw.toString(),
-            minOutRaw.toString(),
-            deadline.toString(),
-          ],
-        },
-      });
-      setLastTx(result.hash);
+      const deadlineSecs = Math.floor(Date.now() / 1000) + 300;
+
+      if (best.kind === "external") {
+        const payload = best.adapter.buildSwapTx({
+          tokenIn,
+          tokenOut,
+          amountInRaw: amountRaw,
+          minOutRaw,
+          deadlineSecs,
+          quote: {
+            venue: best.label,
+            amountOutRaw: best.outRaw,
+            poolAddr: best.poolAddr,
+          },
+        });
+        const result = await signAndSubmitTransaction({
+          data: {
+            function: payload.function,
+            typeArguments: payload.typeArguments,
+            functionArguments:
+              payload.functionArguments as unknown as string[],
+          },
+        });
+        setLastTx(result.hash);
+      } else {
+        // Darbitex-internal: always through arbitrage::swap_entry so the
+        // surplus rule applies uniformly, whether the winning path is
+        // direct or smart-routed.
+        const result = await signAndSubmitTransaction({
+          data: {
+            function: `${PACKAGE}::arbitrage::swap_entry`,
+            typeArguments: [],
+            functionArguments: [
+              tokenIn.meta,
+              tokenOut.meta,
+              amountRaw.toString(),
+              minOutRaw.toString(),
+              deadlineSecs.toString(),
+            ],
+          },
+        });
+        setLastTx(result.hash);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -156,8 +297,9 @@ export function AggregatorPage() {
     <div className="container">
       <h1 className="page-title">Aggregator</h1>
       <p className="page-sub">
-        Compare routing strategies across Darbitex internal venues. External venues (Hyperion,
-        Thala, Cellana) will be wired in as independent quote columns.
+        Cross-venue quote comparison — Darbitex (direct + smart-routed) plus{" "}
+        {EXTERNAL_VENUES.map((v) => v.label).join(" / ")}. Pick the best output and
+        execute in one click.
       </p>
 
       <div className="swap-card">
@@ -217,27 +359,34 @@ export function AggregatorPage() {
           <span>Route</span>
           <span>Output</span>
         </div>
-        {quotes.length === 0 && <div className="venue-empty">Enter an amount to quote</div>}
-        {quotes.map((q) => {
-          const isBest = best && q.venue === best.venue;
-          const outFormatted = q.loading || q.error || q.outRaw === 0n
+        {rows.length === 0 && <div className="venue-empty">Enter an amount to quote</div>}
+        {rows.map((r) => {
+          const isBest = best && r.label === best.label;
+          const outFormatted = r.loading || r.error || r.outRaw === 0n
             ? null
-            : fromRaw(q.outRaw, tokenOut.decimals);
+            : fromRaw(r.outRaw, tokenOut.decimals);
           const outUsd = outFormatted !== null
             ? usdValueOf(outFormatted, tokenOut.symbol, aptPrice)
             : null;
+          const routeText = r.loading
+            ? "…"
+            : r.error
+              ? "error"
+              : r.kind === "external"
+                ? r.poolAddr
+                  ? "1-hop"
+                  : "—"
+                : `${r.pools.length}-hop`;
           return (
-            <div key={q.venue} className={`venue-row ${isBest ? "best" : ""}`}>
-              <span className="venue-name">{q.venue}</span>
-              <span className="venue-route">
-                {q.loading ? "…" : q.error ? "error" : `${q.pools.length}-hop`}
-              </span>
+            <div key={r.label} className={`venue-row ${isBest ? "best" : ""}`}>
+              <span className="venue-name">{r.label}</span>
+              <span className="venue-route">{routeText}</span>
               <span className="venue-out">
-                {q.loading
+                {r.loading
                   ? "…"
-                  : q.error
+                  : r.error
                     ? "—"
-                    : q.outRaw === 0n
+                    : r.outRaw === 0n
                       ? "no route"
                       : outFormatted!.toFixed(6)}
                 {outUsd !== null && (
@@ -251,10 +400,12 @@ export function AggregatorPage() {
 
       {surplus && surplus.amount > 0n && (
         <div className="surplus-note">
-          Smart route surplus over direct baseline:{" "}
+          Best route surplus over Darbitex direct baseline:{" "}
           <strong>+{fromRaw(surplus.amount, tokenOut.decimals).toFixed(6)}</strong>{" "}
-          {tokenOut.symbol} · treasury cut (10%):{" "}
-          {fromRaw(surplus.cut, tokenOut.decimals).toFixed(6)} {tokenOut.symbol}
+          {tokenOut.symbol} · treasury cut only applies if the winner is a Darbitex
+          route ({fromRaw(surplus.cut, tokenOut.decimals).toFixed(6)} {tokenOut.symbol}).
+          External venues keep their own fee schedule; Darbitex takes nothing on routes
+          it didn't improve.
         </div>
       )}
       {surplus && surplus.amount === 0n && best && (

@@ -27,19 +27,106 @@ export function AboutPage() {
 
       <h2 className="section-title">What is Darbitex?</h2>
       <p>
-        Darbitex is a programmable arbitrage AMM on Aptos. It pairs an immutable{" "}
-        <code>x × y = k</code> pool primitive with an opinionated routing layer that ships
-        smart multi-hop swaps, real-capital cycle closure, and flash-loan triangle arbitrage
-        as first-class on-chain operations. The protocol takes 10% of measurable surplus over
-        the canonical direct baseline — and nothing when there is no baseline to improve on.
+        Darbitex is a <strong>two-layer AMM</strong> on Aptos. The bottom layer is a
+        boring, immutable <code>x × y = k</code> pool. The top layer is{" "}
+        <code>arbitrage</code>, a composable middleware module that wraps the pool with
+        smart routing, real-capital cycle closure, and flash-loan triangle arbitrage. The
+        protocol keeps 10% of measurable surplus — and nothing when there is no surplus
+        to tax.
+      </p>
+
+      <h2 className="section-title">How it works — the short version</h2>
+      <p>
+        Think of two counters at a shop.
       </p>
       <p>
-        Arbitrage is code, not a revenue slot. No one owns the arbitrage module, no one
-        mints it, no one claims passive fees from it. It is an open entry function that any
-        wallet can call to close a triangle — and when the flash-loan cycle lands
-        profitably, 90% of the surplus goes to the caller and 10% to a hardcoded treasury.
-        No middle layer, no off-chain solver, no token to hold. Being the trigger is the
-        reward.
+        <strong>Counter 1 — the pool.</strong> A vending machine. You put 1 APT in, you
+        get the exact amount of USDC the <code>x × y = k</code> curve says you get, minus
+        a 1 bps fee that goes entirely to the LPs who stocked the machine. It has no
+        opinions, no strategies, no callbacks, no admin. It is a pure primitive and it
+        never changes.
+      </p>
+      <p>
+        <strong>Counter 2 — arbitrage.</strong> A smart clerk standing next to the vending
+        machine. You hand your APT to the clerk and say "get me USDC". The clerk knows
+        about every pool on Darbitex, simulates the direct route and every multi-hop
+        route, picks whichever produces more USDC, and hands you the output. If the smart
+        route produced more than the direct vending-machine swap would have, the clerk
+        keeps 10% of the <em>difference</em> as a tip and gives you the other 90%. If
+        there was no difference — you just paid for what you would have gotten anyway —
+        the clerk keeps nothing.
+      </p>
+      <p>
+        The clerk also runs a second service: flash-loan triangle arbitrage. Any wallet
+        can walk up and say "borrow from pool A, cycle through B → C → A, repay the
+        loan". If the cycle lands profitably, 90% of the profit goes to whoever triggered
+        it and 10% to the treasury. The trigger is the reward.
+      </p>
+      <p>
+        Every operation is an explicit transaction the caller chose to send. Nothing
+        happens behind anyone's back.
+      </p>
+
+      <h2 className="section-title">Wrapper over hook injection — why</h2>
+      <p>
+        An earlier design had the arbitrage logic wired directly into{" "}
+        <code>pool::swap</code> as <code>beforeSwap</code> / <code>afterSwap</code>{" "}
+        callbacks, in the style of Uniswap V4 hooks. It was abandoned during
+        implementation. The shipped wrapper pattern is strictly better on four axes:
+      </p>
+      <p>
+        <strong>1. No reentrancy surface.</strong> Hook callbacks create nested call
+        graphs — the pool calls back into the arbitrage module mid-swap, which can call
+        back into the pool again. One bug in that chain and the whole thing eats a user's
+        funds or bricks every swap. Final's wrapper is a one-way arrow:{" "}
+        <code>arbitrage</code> imports <code>pool</code>, never the other way around.
+        Nothing inside <code>pool::swap</code> can call out to a module that could call
+        back in.
+      </p>
+      <p>
+        <strong>2. Composable by anyone.</strong> With hook injection, adding a new
+        arbitrage strategy means upgrading the core pool package — which is gated by
+        multisig and breaks audit equity. With the wrapper,{" "}
+        <strong>any developer can write their own satellite module</strong> that imports{" "}
+        <code>darbitex::pool</code> and composes its Tier-2 primitives
+        (<code>swap_compose</code>, <code>execute_path_compose</code>,{" "}
+        <code>close_triangle_compose</code>, <code>close_triangle_flash_compose</code>).
+        You don't need our permission. You don't need a package upgrade. You ship a new
+        module that depends on Darbitex the same way a Rust crate depends on the
+        standard library.
+      </p>
+      <p>
+        <strong>3. Opt-in, not tax.</strong> Hook injection taxes every user swap
+        whether or not the user wanted the arbitrage service — gas, latency, and
+        failure-mode exposure all fall on everyone. The wrapper is pay-for-what-you-use:
+        wallets that just want a direct swap pay 1 bps to LPs and nothing else; wallets
+        that want smart routing explicitly call <code>arbitrage::swap_entry</code>{" "}
+        and pay the 10% surplus only if there was a surplus to capture.
+      </p>
+      <p>
+        <strong>4. Auditable in isolation.</strong> The pool module is {"<"}1K LoC of
+        pure AMM math with a linear call graph and no external callouts. An auditor can
+        read it end-to-end in an afternoon and know there's nothing hiding behind a
+        callback. The arbitrage module can be audited independently without having to
+        reason about reentrancy into the pool.
+      </p>
+      <p>
+        <strong>Scope — what the core package actually does today.</strong> The shipped
+        Darbitex package provides smart routing, cycle closure, and flash triangles{" "}
+        <em>within its own pool graph</em>. Cross-venue routing (Hyperion, Thala,
+        Cellana) and cross-venue flash arbitrage are planned as separate{" "}
+        <strong>satellite packages</strong> that will compose the Tier-2 primitives
+        listed above — they ship as independent deployments, not as upgrades to the core
+        package. This is the composability story made concrete: each new strategy is a
+        new Move package that depends on Darbitex, not a patch to Darbitex itself.
+      </p>
+      <p className="mute">
+        "Hook" in the Uniswap-V4 sense (runtime callback injected into{" "}
+        <code>pool::swap</code>) — Darbitex does not have this. "Hook" in the Move-
+        module-composition sense (an opinionated middleware that wraps a primitive) —
+        Darbitex is exactly this, and the arbitrage module is the reference
+        implementation. Both the pool and arbitrage sources are public on GitHub under
+        The Unlicense.
       </p>
 
       <h2 className="section-title">The 10% rule — only on measurable surplus</h2>

@@ -6,6 +6,39 @@ import { Network } from "@aptos-labs/ts-sdk";
 export const PACKAGE =
   "0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd";
 
+// ThalaSwap V2 adapter satellite — primitive-only wrapper around
+// thalaswap_v2::pool preview/swap with FA-native interface. 3/5
+// multisig. Exposes adapter::quote (view) + adapter::pool_assets
+// (view) + adapter::swap_entry (tx).
+export const THALA_ADAPTER_PACKAGE =
+  "0x583d93de79a3f175f1e3751513b2be767f097376f22ea2e7a5aac331e60f206f";
+
+// Beta's aggregator satellite — ships Hyperion + Cellana wrappers as
+// primitive-only Move view/entry functions. Final re-uses it directly
+// for external-venue quoting + execution; no redeploy needed.
+// Exposes: aggregator::{hyperion_pool_exists, hyperion_get_pool,
+// quote_hyperion, swap_hyperion, quote_cellana, swap_cellana}.
+export const AGGREGATOR_PACKAGE =
+  "0x838a981b43c5bf6fb1139a60ccd7851a4031cd31c775f71f963163c49ab62b47";
+
+// Hyperion CLMM: we only query tier 1 (5 bps). Retired the 6-tier
+// enumeration on 2026-04-14 — mainnet scan verified only tier 1 holds
+// meaningful liquidity, the other five are dust or empty, so probing
+// them burned 15 RPC calls per quote for zero benefit.
+export const HYPERION_ACTIVE_TIER = 1;
+
+// Curated Thala V2 pool seeds. Assets are discovered at runtime via
+// adapter::pool_assets. Adding a new Thala pool means appending its
+// address here — no Move or TypeScript changes required.
+export const THALA_POOL_SEEDS: string[] = [
+  // APT / nUSDC weighted — 5 bps
+  "0xa928222429caf1924c944973c2cd9fc306ec41152ba4de27a001327021a4dff7",
+  // APT / USDt weighted
+  "0x99d34f16193e251af236d5a5c3114fa54e22ca512280317eda2f8faf1514c395",
+  // APT / lzUSDC weighted — 5 bps
+  "0x253f970b6a6f071b5fb63d3f16ea2685431a078f62bf98978b37bd0d169ff7c5",
+];
+
 // Hardcoded Move constant in arbitrage.move. 3-of-5 multisig.
 export const TREASURY =
   "0xdbce89113a975826028236f910668c3ff99c8db8981be6a448caa2f8836f9576";
