@@ -1,0 +1,24 @@
+[package]
+# Package name MUST match the on-chain PackageRegistry entry at the
+# target address (0x39ddcd9e...) — Aptos's code::publish_package_txn
+# check iterates `pkg.name == dep.package_name` when our flashbot
+# package is published, and rejects with EPACKAGE_DEP_MISSING on any
+# name mismatch. The real package there is named "AavePool".
+name = "AavePool"
+version = "0.1.0"
+upgrade_policy = "compatible"
+
+# Interface-only stub of Aave V3 on Aptos — minimum surface needed
+# for the flashbot satellite to call `flash_loan_simple` + its hot-
+# potato receipt pattern. Signatures must match the on-chain module
+# at 0x39ddcd9e1a39fa14f25e3f9ec8a86074d05cc0881cbf667df8a6ee70942016fb.
+#
+# Bodies are `abort 0` — never executed. The satellite is published
+# against the real Aave address and the runtime linker dispatches
+# to the live Aave pool.
+
+[addresses]
+aave_pool = "0x39ddcd9e1a39fa14f25e3f9ec8a86074d05cc0881cbf667df8a6ee70942016fb"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }

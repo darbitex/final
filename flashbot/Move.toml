@@ -1,0 +1,38 @@
+[package]
+name = "DarbitexFlashbot"
+version = "0.1.0"
+upgrade_policy = "compatible"
+authors = ["Rera", "Claude (Anthropic)"]
+
+# darbitex-flashbot — cross-venue flash-arbitrage satellite.
+#
+# POC v0.1: Darbitex ↔ Thala only. Proves the interface-stub approach
+# for cross-venue Move composition without vendoring the full Thala
+# math/manager/oracle transitive tree. Hyperion and Cellana will land
+# in a later version once the stub pattern is verified on mainnet.
+#
+# Flash source is always a Darbitex pool — we do not depend on any
+# external lender (no Aave, no Thala flash). Caller supplies the flash
+# pool address, the two swap pool addresses, and a direction flag.
+# Anyone can call; 100% of profit goes to the caller.
+#
+# SCOPE DISCIPLINE: zero changes to Final's core package. This is a
+# pure satellite built on top of Final's public primitives (pool +
+# pool_factory + arbitrage). No dependency on beta's deprecated
+# modules.
+#
+# Publishes from its own 1/5 multisig, raises to 3/5 after smoke test,
+# upgrade_policy = compatible during a 3-6 month soak.
+
+[addresses]
+darbitex_flashbot = "_"
+darbitex = "0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
+DarbitexFinal = { local = ".." }
+# Stub packages — names MUST match the on-chain PackageRegistry
+# entries at their target addresses. See each stub's Move.toml for
+# rationale. ThalaSwapV2 pulled in transitively via DarbitexThala.
+DarbitexThala = { local = "deps/ThalaStub" }
+AavePool = { local = "deps/AaveStub" }

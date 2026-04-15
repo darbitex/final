@@ -1,0 +1,20 @@
+[package]
+# Package name must match the on-chain PackageRegistry entry at
+# 0x7730cd28... — real published package there is named "ThalaSwapV2".
+# Required for Aptos's code::publish_package_txn dep existence check.
+name = "ThalaSwapV2"
+version = "1.0.0"
+upgrade_policy = "compatible"
+
+# Interface-only stub for `thalaswap_v2::pool::Pool`. DarbitexThala's
+# adapter satellite and our flashbot both hold `Object<Pool>` handles
+# and need the type name declared at compile time. The real package
+# at 0x7730cd28... is published without source (bytecode-only) so we
+# vendor this minimal type-only stub to unblock compilation without
+# pulling the full ThalaSwap math/manager/oracle transitive tree.
+
+[addresses]
+thalaswap_v2 = "0x7730cd28ee1cdc9e999336cbc430f99e7c44397c0aa77516f6f23a78559bb5"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }

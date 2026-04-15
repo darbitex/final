@@ -1,0 +1,30 @@
+[package]
+# Package name MUST match the on-chain PackageRegistry entry at
+# 0x583d93de... which is named "DarbitexThala". Aptos's
+# code::publish_package_txn iterates `pkg.name == dep.package_name`
+# when our flashbot package is published and rejects with
+# EPACKAGE_DEP_MISSING on any name mismatch.
+name = "DarbitexThala"
+version = "0.1.0"
+upgrade_policy = "compatible"
+
+# Interface-only stub of the DarbitexThala adapter satellite. Provides
+# signatures that let DarbitexFlashbot compile against the Thala
+# surface without pulling the full ThalaSwapV2 math/manager/oracle
+# transitive tree. Function bodies are `abort 0` — never executed,
+# because flashbot is published against the real on-chain address
+# where the runtime linker dispatches calls to the actual adapter.
+#
+# Ownership: this stub package owns ONLY the `thala_adapter::adapter`
+# module. The `thalaswap_v2::pool::Pool` type it references lives in
+# a SEPARATE stub package (deps/ThalaSwapV2/) so each stub package
+# ↔ one on-chain address, one-to-one. This layering matches how the
+# real DarbitexThala satellite declares ThalaSwapV2 as a dependency
+# in its Move.toml.
+
+[addresses]
+thala_adapter = "0x583d93de79a3f175f1e3751513b2be767f097376f22ea2e7a5aac331e60f206f"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
+ThalaSwapV2 = { local = "../ThalaSwapV2" }

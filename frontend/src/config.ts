@@ -31,11 +31,19 @@ export const HYPERION_ACTIVE_TIER = 1;
 // adapter::pool_assets. Adding a new Thala pool means appending its
 // address here — no Move or TypeScript changes required.
 export const THALA_POOL_SEEDS: string[] = [
-  // APT / USDC (native Circle) weighted — 5 bps
+  // APT / USDC (native Circle) WEIGHTED — 5 bps. Prime flashbot
+  // target: round-trip cost with Darbitex's 1 bps pool is ~6 bps.
   "0xa928222429caf1924c944973c2cd9fc306ec41152ba4de27a001327021a4dff7",
-  // APT / USDt (native Tether) weighted
+  // APT / USDt (native Tether) WEIGHTED — 30 bps. High-fee outlier,
+  // kept for Aggregator quote comparison only. Not a flashbot target.
   "0x99d34f16193e251af236d5a5c3114fa54e22ca512280317eda2f8faf1514c395",
-  // APT / lzUSDC (LayerZero-bridged) weighted — 5 bps
+  // APT / USDt (native Tether) STABLE — 1 bps. Lowest Thala V2 fee
+  // but the curve assumes parity, so any non-tiny size slips hard.
+  // $36 TVL confirms LPs avoid it. Use for flashbot SMOKE-TEST /
+  // micro-arb only; never for production-sized arb.
+  "0x7845c59627bf2ecd0a8d4e2e83f0008546868442c3027060f042398578213164",
+  // APT / lzUSDC (LayerZero-bridged) WEIGHTED — 5 bps. Second prime
+  // flashbot target alongside the native USDC pool.
   "0x253f970b6a6f071b5fb63d3f16ea2685431a078f62bf98978b37bd0d169ff7c5",
 ];
 
