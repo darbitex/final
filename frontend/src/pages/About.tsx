@@ -33,6 +33,14 @@ export function AboutPage() {
         as first-class on-chain operations. The protocol takes 10% of measurable surplus over
         the canonical direct baseline — and nothing when there is no baseline to improve on.
       </p>
+      <p>
+        Arbitrage is code, not a revenue slot. No one owns the arbitrage module, no one
+        mints it, no one claims passive fees from it. It is an open entry function that any
+        wallet can call to close a triangle — and when the flash-loan cycle lands
+        profitably, 90% of the surplus goes to the caller and 10% to a hardcoded treasury.
+        No middle layer, no off-chain solver, no token to hold. Being the trigger is the
+        reward.
+      </p>
 
       <h2 className="section-title">The 10% rule — only on measurable surplus</h2>
       <p>
@@ -102,8 +110,10 @@ export function AboutPage() {
       <h2 className="section-title">Fully decentralized</h2>
       <p>
         <strong>Smart contracts</strong> — on Aptos mainnet, published from a 3-of-5
-        multisig. <code>upgrade_policy = "compatible"</code> during a 3–6 month soak, then
-        flipped to <code>immutable</code>.
+        multisig. Launched under <code>upgrade_policy = "compatible"</code> during a 3–6
+        month soak for bug-fix runway. After the soak, upgrade policy flips to{" "}
+        <code>immutable</code> — including the hardcoded treasury address and the 10%
+        surplus rate, neither of which can ever be retuned.
       </p>
       <p>
         <strong>Frontend</strong> — hosted on Walrus (decentralized storage on Sui).
