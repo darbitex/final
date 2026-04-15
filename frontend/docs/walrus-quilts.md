@@ -24,7 +24,7 @@ Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
 | 2 | `0x6eac05c0969c81ffa429bbe8b8eef9c9adfe067539c12617e95d17bf94436339` | `ix5pr4pFD7mM4YGivnzBOK99qE7tCm334EkSjLwA2yw` | 2.12 MiB | 33 | ~2026-06-22 | 3-venue FlashbotPanel (Thala/Hyperion/Cellana picker wired to `run_arb` / `run_arb_hyperion` / `run_arb_cellana`) + bundled token icons (APT/USDC/USDT/lzUSDC/lzUSDT, custom FA icon_uri fallback, letter-badge fallback) |
-| 1 | `0x3364a735114f0dbf23a74d9f9094bf58a78095e606835bfee47396092b973dc0` | `YZBv8PpL7ws8FjMCfjtNVOTB3XJbYIQv7JKgpf9PwUM` | 2.12 MiB | 33 | ~2026-06-22 | (orphaned by quilt #2 deploy) v1 flashbot panel — Thala-only `run_arb` section. Safe to burn individually per `feedback_walrus_destroy_shared_blob.md`. |
+| 1 | `0x3364a735114f0dbf23a74d9f9094bf58a78095e606835bfee47396092b973dc0` | `YZBv8PpL7ws8FjMCfjtNVOTB3XJbYIQv7JKgpf9PwUM` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — left to expire.** Site no longer references this quilt (replaced by #2 on 2026-04-15 via `site-builder update`). Walrus CLI has no direct burn path for shared blobs (`burn-blobs` only accepts owned Blob objects). Not funded, so it will dealloc naturally at epoch 33. No action needed. |
 
 Short lease (5 epochs) per the beta SOP. Not funded.
 
