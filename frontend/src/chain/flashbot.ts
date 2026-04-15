@@ -1,5 +1,7 @@
 import {
+  AGGREGATOR_PACKAGE,
   FLASHBOT_PACKAGE,
+  HYPERION_ACTIVE_TIER,
   PACKAGE,
   THALA_ADAPTER_PACKAGE,
   THALA_POOL_SEEDS,
@@ -7,6 +9,8 @@ import {
   type TokenConfig,
 } from "../config";
 import { createRpcPool, metaEq } from "./rpc-pool";
+
+export type FlashbotVenue = "thala" | "hyperion" | "cellana";
 
 // Dedicated RPC pool — flashbot preview runs several parallel view
 // calls (direct + smart quotes on two venues in two directions),
@@ -234,6 +238,256 @@ export function buildRunArbPayload(params: {
       params.darbitexSwapPool,
       params.thalaSwapPool,
       params.thalaFirst,
+      params.minNetProfitRaw.toString(),
+      params.deadlineSecs.toString(),
+    ],
+  };
+}
+
+// ===== Hyperion helpers =====
+
+async function hyperionResolvePool(
+  metaA: string,
+  metaB: string,
+): Promise<string | null> {
+  try {
+    const [exists] = await rpc.viewFn<[boolean]>(
+      "aggregator::hyperion_pool_exists",
+      [],
+      [metaA, metaB, HYPERION_ACTIVE_TIER],
+      AGGREGATOR_PACKAGE,
+    );
+    if (!exists) return null;
+    const [addr] = await rpc.viewFn<[string]>(
+      "aggregator::hyperion_get_pool",
+      [],
+      [metaA, metaB, HYPERION_ACTIVE_TIER],
+      AGGREGATOR_PACKAGE,
+    );
+    return String(addr);
+  } catch {
+    return null;
+  }
+}
+
+async function hyperionLeg(
+  poolAddr: string,
+  fromMeta: string,
+  amountInRaw: bigint,
+): Promise<bigint> {
+  try {
+    const [outStr] = await rpc.viewFn<[string | number]>(
+      "aggregator::quote_hyperion",
+      [],
+      [poolAddr, fromMeta, amountInRaw.toString()],
+      AGGREGATOR_PACKAGE,
+    );
+    return BigInt(String(outStr ?? "0"));
+  } catch {
+    return 0n;
+  }
+}
+
+export async function findHyperionPoolForPair(
+  metaA: string,
+  metaB: string,
+): Promise<string | null> {
+  const [a, b] =
+    metaA.toLowerCase() < metaB.toLowerCase() ? [metaA, metaB] : [metaB, metaA];
+  return hyperionResolvePool(a, b);
+}
+
+// ===== Cellana helpers =====
+
+async function cellanaLeg(
+  fromMeta: string,
+  toMeta: string,
+  amountInRaw: bigint,
+  isStable: boolean,
+): Promise<bigint> {
+  try {
+    const [outStr] = await rpc.viewFn<[string | number]>(
+      "aggregator::quote_cellana",
+      [],
+      [fromMeta, toMeta, amountInRaw.toString(), isStable],
+      AGGREGATOR_PACKAGE,
+    );
+    return BigInt(String(outStr ?? "0"));
+  } catch {
+    return 0n;
+  }
+}
+
+// Probe both curves once to discover which one(s) route the pair.
+// Returns a list of viable curves (can be 0, 1, or 2 entries).
+export async function findCellanaCurvesForPair(
+  metaA: string,
+  metaB: string,
+): Promise<boolean[]> {
+  const probe = 1_000_000n;
+  const [volatile, stable] = await Promise.all([
+    cellanaLeg(metaA, metaB, probe, false),
+    cellanaLeg(metaA, metaB, probe, true),
+  ]);
+  const out: boolean[] = [];
+  if (volatile > 0n) out.push(false);
+  if (stable > 0n) out.push(true);
+  return out;
+}
+
+// ===== Hyperion preview =====
+
+export async function previewHyperionCycle(params: {
+  borrowAsset: TokenConfig;
+  borrowAmountRaw: bigint;
+  otherAsset: TokenConfig;
+  darbitexPool: string;
+  hyperionPool: string;
+}): Promise<FlashbotPreview> {
+  const { borrowAsset, borrowAmountRaw, otherAsset, darbitexPool, hyperionPool } =
+    params;
+
+  const [darbOut, hypOut] = await Promise.all([
+    darbitexLeg(darbitexPool, borrowAsset.meta, borrowAmountRaw),
+    hyperionLeg(hyperionPool, borrowAsset.meta, borrowAmountRaw),
+  ]);
+
+  const [darbFirstLeg2, hypFirstLeg2] = await Promise.all([
+    darbOut > 0n
+      ? hyperionLeg(hyperionPool, otherAsset.meta, darbOut)
+      : Promise.resolve(0n),
+    hypOut > 0n
+      ? darbitexLeg(darbitexPool, otherAsset.meta, hypOut)
+      : Promise.resolve(0n),
+  ]);
+
+  const compute = (leg1: bigint, leg2: bigint): FlashbotDirectionPreview | null => {
+    if (leg1 === 0n) return null;
+    const profit = leg2 > borrowAmountRaw ? leg2 - borrowAmountRaw : 0n;
+    const profitable = leg2 > borrowAmountRaw;
+    const treasuryShare = (profit * 1000n) / 10_000n;
+    const callerShare = profit - treasuryShare;
+    return { leg1Out: leg1, leg2Out: leg2, profitTotal: profit, profitable, callerShare, treasuryShare };
+  };
+
+  const darbitexFirst = compute(darbOut, darbFirstLeg2);
+  const thalaFirst = compute(hypOut, hypFirstLeg2);
+
+  let best: FlashbotPreview["best"] = null;
+  const candidates: Array<{ thalaFirst: boolean; p: FlashbotDirectionPreview }> = [];
+  if (darbitexFirst && darbitexFirst.profitable) candidates.push({ thalaFirst: false, p: darbitexFirst });
+  if (thalaFirst && thalaFirst.profitable) candidates.push({ thalaFirst: true, p: thalaFirst });
+  if (candidates.length > 0) {
+    const winner = candidates.sort((a, b) =>
+      b.p.callerShare > a.p.callerShare ? 1 : b.p.callerShare < a.p.callerShare ? -1 : 0,
+    )[0];
+    best = { thalaFirst: winner.thalaFirst, preview: winner.p };
+  }
+  return { darbitexFirst, thalaFirst, best };
+}
+
+export function buildRunArbHyperionPayload(params: {
+  borrowAsset: TokenConfig;
+  borrowAmountRaw: bigint;
+  otherAsset: TokenConfig;
+  darbitexSwapPool: string;
+  hyperionSwapPool: string;
+  hyperionFirst: boolean;
+  minNetProfitRaw: bigint;
+  deadlineSecs: number;
+}) {
+  // borrow_is_hyperion_side_a: true iff the borrow asset address sorts
+  // before the other asset address by byte order. Must match the same
+  // sorting Hyperion uses internally to index its pools.
+  const borrowIsSideA =
+    params.borrowAsset.meta.toLowerCase() < params.otherAsset.meta.toLowerCase();
+  return {
+    function: `${FLASHBOT_PACKAGE}::flashbot::run_arb_hyperion`,
+    typeArguments: [] as string[],
+    functionArguments: [
+      params.borrowAsset.meta,
+      params.borrowAmountRaw.toString(),
+      params.otherAsset.meta,
+      params.darbitexSwapPool,
+      params.hyperionSwapPool,
+      borrowIsSideA,
+      params.hyperionFirst,
+      params.minNetProfitRaw.toString(),
+      params.deadlineSecs.toString(),
+    ],
+  };
+}
+
+// ===== Cellana preview =====
+
+export async function previewCellanaCycle(params: {
+  borrowAsset: TokenConfig;
+  borrowAmountRaw: bigint;
+  otherAsset: TokenConfig;
+  darbitexPool: string;
+  isStable: boolean;
+}): Promise<FlashbotPreview> {
+  const { borrowAsset, borrowAmountRaw, otherAsset, darbitexPool, isStable } = params;
+
+  const [darbOut, cellOut] = await Promise.all([
+    darbitexLeg(darbitexPool, borrowAsset.meta, borrowAmountRaw),
+    cellanaLeg(borrowAsset.meta, otherAsset.meta, borrowAmountRaw, isStable),
+  ]);
+
+  const [darbFirstLeg2, cellFirstLeg2] = await Promise.all([
+    darbOut > 0n
+      ? cellanaLeg(otherAsset.meta, borrowAsset.meta, darbOut, isStable)
+      : Promise.resolve(0n),
+    cellOut > 0n
+      ? darbitexLeg(darbitexPool, otherAsset.meta, cellOut)
+      : Promise.resolve(0n),
+  ]);
+
+  const compute = (leg1: bigint, leg2: bigint): FlashbotDirectionPreview | null => {
+    if (leg1 === 0n) return null;
+    const profit = leg2 > borrowAmountRaw ? leg2 - borrowAmountRaw : 0n;
+    const profitable = leg2 > borrowAmountRaw;
+    const treasuryShare = (profit * 1000n) / 10_000n;
+    const callerShare = profit - treasuryShare;
+    return { leg1Out: leg1, leg2Out: leg2, profitTotal: profit, profitable, callerShare, treasuryShare };
+  };
+
+  const darbitexFirst = compute(darbOut, darbFirstLeg2);
+  const thalaFirst = compute(cellOut, cellFirstLeg2);
+
+  let best: FlashbotPreview["best"] = null;
+  const candidates: Array<{ thalaFirst: boolean; p: FlashbotDirectionPreview }> = [];
+  if (darbitexFirst && darbitexFirst.profitable) candidates.push({ thalaFirst: false, p: darbitexFirst });
+  if (thalaFirst && thalaFirst.profitable) candidates.push({ thalaFirst: true, p: thalaFirst });
+  if (candidates.length > 0) {
+    const winner = candidates.sort((a, b) =>
+      b.p.callerShare > a.p.callerShare ? 1 : b.p.callerShare < a.p.callerShare ? -1 : 0,
+    )[0];
+    best = { thalaFirst: winner.thalaFirst, preview: winner.p };
+  }
+  return { darbitexFirst, thalaFirst, best };
+}
+
+export function buildRunArbCellanaPayload(params: {
+  borrowAsset: TokenConfig;
+  borrowAmountRaw: bigint;
+  otherAsset: TokenConfig;
+  darbitexSwapPool: string;
+  isStable: boolean;
+  cellanaFirst: boolean;
+  minNetProfitRaw: bigint;
+  deadlineSecs: number;
+}) {
+  return {
+    function: `${FLASHBOT_PACKAGE}::flashbot::run_arb_cellana`,
+    typeArguments: [] as string[],
+    functionArguments: [
+      params.borrowAsset.meta,
+      params.borrowAmountRaw.toString(),
+      params.otherAsset.meta,
+      params.darbitexSwapPool,
+      params.isStable,
+      params.cellanaFirst,
       params.minNetProfitRaw.toString(),
       params.deadlineSecs.toString(),
     ],

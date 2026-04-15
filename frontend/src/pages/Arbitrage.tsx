@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useMemo, useState } from "react";
 import { FlashbotPanel } from "../components/FlashbotPanel";
+import { TokenIcon } from "../components/TokenIcon";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
@@ -164,20 +165,23 @@ export function ArbitragePage() {
 
         <div className="swap-row">
           <label>Anchor asset</label>
-          <select
-            className="token-select full"
-            value={anchor.symbol}
-            onChange={(e) => {
-              const next = tokenList.find((t) => t.symbol === e.target.value);
-              if (next) setAnchor(next);
-            }}
-          >
-            {tokenList.map((t) => (
-              <option key={t.symbol} value={t.symbol}>
-                {t.symbol}
-              </option>
-            ))}
-          </select>
+          <span className="token-select-with-icon">
+            <TokenIcon token={anchor} size={18} />
+            <select
+              className="token-select full"
+              value={anchor.symbol}
+              onChange={(e) => {
+                const next = tokenList.find((t) => t.symbol === e.target.value);
+                if (next) setAnchor(next);
+              }}
+            >
+              {tokenList.map((t) => (
+                <option key={t.symbol} value={t.symbol}>
+                  {t.symbol}
+                </option>
+              ))}
+            </select>
+          </span>
         </div>
 
         <div className="swap-row">

@@ -1,5 +1,6 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
+import { TokenIcon } from "../components/TokenIcon";
 import { PACKAGE, QUOTE_DEBOUNCE_MS, TOKENS, type TokenConfig } from "../config";
 import { useFaBalance } from "../chain/balance";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
@@ -229,20 +230,23 @@ function TokenSelect({
   side: Side;
 }) {
   return (
-    <select
-      className="token-select"
-      value={value.symbol}
-      onChange={(e) => {
-        const next = options.find((t) => t.symbol === e.target.value);
-        if (next) onChange(next);
-      }}
-      aria-label={`Token ${side}`}
-    >
-      {options.map((t) => (
-        <option key={t.symbol} value={t.symbol}>
-          {t.symbol}
-        </option>
-      ))}
-    </select>
+    <span className="token-select-with-icon">
+      <TokenIcon token={value} size={18} />
+      <select
+        className="token-select"
+        value={value.symbol}
+        onChange={(e) => {
+          const next = options.find((t) => t.symbol === e.target.value);
+          if (next) onChange(next);
+        }}
+        aria-label={`Token ${side}`}
+      >
+        {options.map((t) => (
+          <option key={t.symbol} value={t.symbol}>
+            {t.symbol}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }

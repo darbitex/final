@@ -1,0 +1,26 @@
+[package]
+# Package name MUST match the on-chain PackageRegistry entry at
+# 0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1
+# which is literally "cellana". Aptos's code::publish_package_txn
+# rejects EPACKAGE_DEP_MISSING on any name mismatch.
+name = "cellana"
+version = "1.0.0"
+upgrade_policy = "compatible"
+
+# Interface-only stub of Cellana's native `router::swap` compose
+# function. Unlike Thala and Hyperion (which require intermediate
+# adapter satellites), Cellana exposes a primitive-style FA-in/FA-out
+# swap directly on its own router — pool resolution happens inside
+# Cellana via `(from_token, to_token, is_stable)` lookup, so the
+# satellite never needs to hold an Object<Pool> handle.
+#
+# Body is `abort 0` — the flashbot package is published against the
+# real Cellana address and the runtime linker dispatches to the live
+# router. ABI verified against live on-chain module at
+# 0x4bf51972... on 2026-04-15 via REST /accounts/.../module/router.
+
+[addresses]
+cellana = "0x4bf51972879e3b95c4781a5cdcb9e1ee24ef483e7d22f2d903626f126df62bd1"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }

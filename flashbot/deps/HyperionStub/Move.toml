@@ -1,0 +1,28 @@
+[package]
+# Package name matches on-chain PackageRegistry at 0x5b4bf2a462a9...
+# which is literally "HyperionAdapter". Required for Aptos's
+# code::publish_package_txn dep existence check to pass when the
+# flashbot package is published or upgraded.
+name = "HyperionAdapter"
+version = "0.1.0"
+upgrade_policy = "compatible"
+
+# Interface-only stub of the HyperionAdapter satellite's
+# `adapter::swap` function — the FA-in/FA-out compose variant that
+# flashbot needs for atomic cross-venue composition. Bodies are
+# `abort 0` — runtime dispatches to the real module at the address
+# embedded below.
+#
+# ABI verified against live on-chain module at
+# 0x5b4bf2a462a90158514ee1345599c764aa9513d117ba233cadf8494a266fa2bb
+# on 2026-04-15 via REST /accounts/.../module/adapter:
+#   swap(Object<LiquidityPoolV3>, bool, FungibleAsset, u64)
+#     -> FungibleAsset
+# (public, not entry — cleanly composable from other modules)
+
+[addresses]
+hyperion_adapter = "0x5b4bf2a462a90158514ee1345599c764aa9513d117ba233cadf8494a266fa2bb"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
+dex = { local = "../DexStub" }

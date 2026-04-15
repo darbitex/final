@@ -1,5 +1,6 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
+import { TokenIcon } from "../components/TokenIcon";
 import {
   PACKAGE,
   QUOTE_DEBOUNCE_MS,
@@ -316,20 +317,23 @@ export function AggregatorPage() {
               placeholder="0.0"
               min="0"
             />
-            <select
-              className="token-select"
-              value={tokenIn.symbol}
-              onChange={(e) => {
-                const next = tokenList.find((t) => t.symbol === e.target.value);
-                if (next) setTokenIn(next);
-              }}
-            >
-              {tokenList.map((t) => (
-                <option key={t.symbol} value={t.symbol}>
-                  {t.symbol}
-                </option>
-              ))}
-            </select>
+            <span className="token-select-with-icon">
+              <TokenIcon token={tokenIn} size={18} />
+              <select
+                className="token-select"
+                value={tokenIn.symbol}
+                onChange={(e) => {
+                  const next = tokenList.find((t) => t.symbol === e.target.value);
+                  if (next) setTokenIn(next);
+                }}
+              >
+                {tokenList.map((t) => (
+                  <option key={t.symbol} value={t.symbol}>
+                    {t.symbol}
+                  </option>
+                ))}
+              </select>
+            </span>
           </div>
           {(() => {
             const n = Number(amountIn);
@@ -339,20 +343,23 @@ export function AggregatorPage() {
         </div>
         <div className="swap-row">
           <label>Output token</label>
-          <select
-            className="token-select full"
-            value={tokenOut.symbol}
-            onChange={(e) => {
-              const next = tokenList.find((t) => t.symbol === e.target.value);
-              if (next) setTokenOut(next);
-            }}
-          >
-            {tokenList.map((t) => (
-              <option key={t.symbol} value={t.symbol}>
-                {t.symbol}
-              </option>
-            ))}
-          </select>
+          <span className="token-select-with-icon">
+            <TokenIcon token={tokenOut} size={18} />
+            <select
+              className="token-select full"
+              value={tokenOut.symbol}
+              onChange={(e) => {
+                const next = tokenList.find((t) => t.symbol === e.target.value);
+                if (next) setTokenOut(next);
+              }}
+            >
+              {tokenList.map((t) => (
+                <option key={t.symbol} value={t.symbol}>
+                  {t.symbol}
+                </option>
+              ))}
+            </select>
+          </span>
         </div>
       </div>
 

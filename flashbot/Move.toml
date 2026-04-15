@@ -1,6 +1,6 @@
 [package]
 name = "DarbitexFlashbot"
-version = "0.1.0"
+version = "0.3.0"
 upgrade_policy = "compatible"
 authors = ["Rera", "Claude (Anthropic)"]
 
@@ -33,6 +33,10 @@ AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", su
 DarbitexFinal = { local = ".." }
 # Stub packages — names MUST match the on-chain PackageRegistry
 # entries at their target addresses. See each stub's Move.toml for
-# rationale. ThalaSwapV2 pulled in transitively via DarbitexThala.
+# rationale. ThalaSwapV2 pulled in transitively via DarbitexThala;
+# "dex" (Hyperion's core CLMM package) pulled in transitively via
+# HyperionAdapter for the Object<LiquidityPoolV3> type.
 DarbitexThala = { local = "deps/ThalaStub" }
 AavePool = { local = "deps/AaveStub" }
+HyperionAdapter = { local = "deps/HyperionStub" }
+cellana = { local = "deps/CellanaStub" }

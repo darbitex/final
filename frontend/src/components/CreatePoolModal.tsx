@@ -4,6 +4,7 @@ import { PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { fetchFaMetadata, useFaBalance } from "../chain/balance";
 import { toRaw } from "../chain/rpc-pool";
 import { Modal } from "./Modal";
+import { TokenIcon } from "./TokenIcon";
 
 // Final's pool_factory::create_canonical_pool asserts the metadata pair
 // is strictly sorted by BCS bytes (`assert_sorted`). Address BCS encoding
@@ -82,7 +83,7 @@ export function CreatePoolModal({
         ...s,
         resolving: false,
         error: null,
-        resolved: { meta: r.meta, symbol: r.symbol, decimals: r.decimals },
+        resolved: { meta: r.meta, symbol: r.symbol, decimals: r.decimals, icon: r.iconUri },
       }));
     });
   }
@@ -173,14 +174,22 @@ export function CreatePoolModal({
   ) => (
     <>
       <label>Token {labelPrefix}</label>
-      <select value={side.symbol} onChange={(e) => pickSide(setSide, e.target.value)}>
-        {tokenList.map((t) => (
-          <option key={t.symbol} value={t.symbol}>
-            {t.symbol}
-          </option>
-        ))}
-        <option value={CUSTOM}>Other — paste FA address…</option>
-      </select>
+      <span className="token-select-with-icon">
+        <TokenIcon
+          token={
+            side.resolved ?? (TOKENS[side.symbol] ?? { symbol: side.symbol })
+          }
+          size={18}
+        />
+        <select value={side.symbol} onChange={(e) => pickSide(setSide, e.target.value)}>
+          {tokenList.map((t) => (
+            <option key={t.symbol} value={t.symbol}>
+              {t.symbol}
+            </option>
+          ))}
+          <option value={CUSTOM}>Other — paste FA address…</option>
+        </select>
+      </span>
 
       {side.symbol === CUSTOM && (
         <>

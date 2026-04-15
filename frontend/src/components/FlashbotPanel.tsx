@@ -2,31 +2,35 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
 import { TOKENS, type TokenConfig } from "../config";
 import {
+  buildRunArbCellanaPayload,
+  buildRunArbHyperionPayload,
   buildRunArbPayload,
   canonicalDarbitexPool,
+  findCellanaCurvesForPair,
+  findHyperionPoolForPair,
   findThalaPoolsForPair,
+  previewCellanaCycle,
   previewFlashbotCycle,
+  previewHyperionCycle,
   type FlashbotPreview,
+  type FlashbotVenue,
 } from "../chain/flashbot";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
+import { TokenIcon } from "./TokenIcon";
 import { useAddress } from "../wallet/useConnect";
 
 // Cross-venue flash-arb panel — wires the Arbitrage page to the
-// darbitex-flashbot satellite. Flow:
-//   1. User picks borrow asset + size + other asset
-//   2. Frontend auto-resolves Darbitex canonical pool + Thala
-//      candidate pools that match the pair (from the seed registry)
-//   3. On scan, previews both cycle directions via on-chain view
-//      calls, picks the profitable winner
-//   4. On execute, submits `flashbot::run_arb` with the winning
-//      direction + slippage-adjusted min_net_profit floor
+// darbitex-flashbot satellite. Supports three venue pairings:
+//   - Darbitex × Thala V2           (`run_arb`)
+//   - Darbitex × Hyperion CLMM      (`run_arb_hyperion`)
+//   - Darbitex × Cellana (stable/volatile) (`run_arb_cellana`)
 //
-// All profit distribution math (90% caller / 10% treasury) is a
-// hardcoded Move constant on the satellite — the frontend just
-// displays the split and passes the caller-share floor through
-// as `min_net_profit`.
+// User picks venue first, then the borrow pair + size; per-venue pool
+// discovery runs on pair change. Preview compares both leg directions
+// and the panel executes the winning direction with a slippage floor
+// applied to the caller-share (post 90/10 split).
 export function FlashbotPanel() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
@@ -34,6 +38,7 @@ export function FlashbotPanel() {
   const aptPrice = useAptPriceUsd();
   const tokenList = useMemo(() => Object.values(TOKENS), []);
 
+  const [venue, setVenue] = useState<FlashbotVenue>("thala");
   const [borrowAsset, setBorrowAsset] = useState<TokenConfig>(TOKENS.APT);
   const [otherAsset, setOtherAsset] = useState<TokenConfig>(TOKENS.USDC);
   const [amount, setAmount] = useState("");
@@ -41,8 +46,12 @@ export function FlashbotPanel() {
   const [darbitexPool, setDarbitexPool] = useState<string | null>(null);
   const [poolLookupErr, setPoolLookupErr] = useState<string | null>(null);
 
+  // Thala: list of candidate pools; Hyperion: single pool; Cellana: curves.
   const [thalaCandidates, setThalaCandidates] = useState<string[]>([]);
   const [selectedThalaPool, setSelectedThalaPool] = useState<string | null>(null);
+  const [hyperionPool, setHyperionPool] = useState<string | null>(null);
+  const [cellanaCurves, setCellanaCurves] = useState<boolean[]>([]);
+  const [selectedCellanaStable, setSelectedCellanaStable] = useState<boolean | null>(null);
 
   const [scanning, setScanning] = useState(false);
   const [preview, setPreview] = useState<FlashbotPreview | null>(null);
@@ -52,32 +61,66 @@ export function FlashbotPanel() {
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [submitErr, setSubmitErr] = useState<string | null>(null);
 
-  // Re-resolve pools whenever the pair changes.
+  // Re-resolve pools whenever venue or pair changes.
   useEffect(() => {
     if (borrowAsset.meta === otherAsset.meta) {
       setDarbitexPool(null);
       setThalaCandidates([]);
       setSelectedThalaPool(null);
+      setHyperionPool(null);
+      setCellanaCurves([]);
+      setSelectedCellanaStable(null);
       return;
     }
     let cancelled = false;
     setPoolLookupErr(null);
     (async () => {
-      const [darb, thalaList] = await Promise.all([
-        canonicalDarbitexPool(borrowAsset.meta, otherAsset.meta),
-        findThalaPoolsForPair(borrowAsset.meta, otherAsset.meta),
-      ]);
+      const darbP = canonicalDarbitexPool(borrowAsset.meta, otherAsset.meta);
+      const venueP: Promise<unknown> =
+        venue === "thala"
+          ? findThalaPoolsForPair(borrowAsset.meta, otherAsset.meta)
+          : venue === "hyperion"
+            ? findHyperionPoolForPair(borrowAsset.meta, otherAsset.meta)
+            : findCellanaCurvesForPair(borrowAsset.meta, otherAsset.meta);
+      const [darb, venueRes] = await Promise.all([darbP, venueP]);
       if (cancelled) return;
       setDarbitexPool(darb);
-      setThalaCandidates(thalaList);
-      setSelectedThalaPool(thalaList[0] ?? null);
-      if (!darb) setPoolLookupErr("No canonical Darbitex pool for this pair");
-      else if (thalaList.length === 0) setPoolLookupErr("No matching Thala pool in the seed registry");
+
+      if (venue === "thala") {
+        const list = venueRes as string[];
+        setThalaCandidates(list);
+        setSelectedThalaPool(list[0] ?? null);
+        setHyperionPool(null);
+        setCellanaCurves([]);
+        setSelectedCellanaStable(null);
+        if (!darb) setPoolLookupErr("No canonical Darbitex pool for this pair");
+        else if (list.length === 0)
+          setPoolLookupErr("No matching Thala pool in the seed registry");
+      } else if (venue === "hyperion") {
+        const pool = venueRes as string | null;
+        setHyperionPool(pool);
+        setThalaCandidates([]);
+        setSelectedThalaPool(null);
+        setCellanaCurves([]);
+        setSelectedCellanaStable(null);
+        if (!darb) setPoolLookupErr("No canonical Darbitex pool for this pair");
+        else if (!pool) setPoolLookupErr("Hyperion has no pool for this pair at the active tier");
+      } else {
+        const curves = venueRes as boolean[];
+        setCellanaCurves(curves);
+        setSelectedCellanaStable(curves[0] ?? null);
+        setThalaCandidates([]);
+        setSelectedThalaPool(null);
+        setHyperionPool(null);
+        if (!darb) setPoolLookupErr("No canonical Darbitex pool for this pair");
+        else if (curves.length === 0)
+          setPoolLookupErr("Cellana doesn't route this pair on either curve");
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [borrowAsset, otherAsset]);
+  }, [venue, borrowAsset, otherAsset]);
 
   // Clear preview when any input changes.
   useEffect(() => {
@@ -85,10 +128,10 @@ export function FlashbotPanel() {
     setScanErr(null);
     setLastTx(null);
     setSubmitErr(null);
-  }, [borrowAsset, otherAsset, amount, selectedThalaPool]);
+  }, [venue, borrowAsset, otherAsset, amount, selectedThalaPool, hyperionPool, selectedCellanaStable]);
 
   async function scan() {
-    if (!darbitexPool || !selectedThalaPool) return;
+    if (!darbitexPool) return;
     const numeric = Number(amount);
     if (!Number.isFinite(numeric) || numeric <= 0) {
       setScanErr("Enter a positive amount");
@@ -99,13 +142,35 @@ export function FlashbotPanel() {
     setPreview(null);
     try {
       const borrowAmountRaw = toRaw(numeric, borrowAsset.decimals);
-      const result = await previewFlashbotCycle({
-        borrowAsset,
-        borrowAmountRaw,
-        otherAsset,
-        darbitexPool,
-        thalaPool: selectedThalaPool,
-      });
+      let result: FlashbotPreview;
+      if (venue === "thala") {
+        if (!selectedThalaPool) return;
+        result = await previewFlashbotCycle({
+          borrowAsset,
+          borrowAmountRaw,
+          otherAsset,
+          darbitexPool,
+          thalaPool: selectedThalaPool,
+        });
+      } else if (venue === "hyperion") {
+        if (!hyperionPool) return;
+        result = await previewHyperionCycle({
+          borrowAsset,
+          borrowAmountRaw,
+          otherAsset,
+          darbitexPool,
+          hyperionPool,
+        });
+      } else {
+        if (selectedCellanaStable === null) return;
+        result = await previewCellanaCycle({
+          borrowAsset,
+          borrowAmountRaw,
+          otherAsset,
+          darbitexPool,
+          isStable: selectedCellanaStable,
+        });
+      }
       setPreview(result);
     } catch (e) {
       setScanErr((e as Error).message);
@@ -115,31 +180,58 @@ export function FlashbotPanel() {
   }
 
   async function execute() {
-    if (!address || !preview || !preview.best || !darbitexPool || !selectedThalaPool) {
-      return;
-    }
+    if (!address || !preview || !preview.best || !darbitexPool) return;
     setSubmitting(true);
     setSubmitErr(null);
     setLastTx(null);
     try {
       const borrowAmountRaw = toRaw(Number(amount), borrowAsset.decimals);
-      // Slippage floor — accept some reserve drift between preview and
-      // execution. `min_net_profit` is compared against the caller share
-      // on-chain, so we apply the slippage multiplier on that value.
       const slipBps = BigInt(Math.floor((1 - slippage) * 10_000));
       const minNetProfitRaw =
         (preview.best.preview.callerShare * slipBps) / 10_000n;
       const deadlineSecs = Math.floor(Date.now() / 1000) + 300;
-      const payload = buildRunArbPayload({
-        borrowAsset,
-        borrowAmountRaw,
-        otherAsset,
-        darbitexSwapPool: darbitexPool,
-        thalaSwapPool: selectedThalaPool,
-        thalaFirst: preview.best.thalaFirst,
-        minNetProfitRaw,
-        deadlineSecs,
-      });
+      // `preview.best.thalaFirst` is semantically "non-Darbitex venue first"
+      // for all venues — field name kept for shape compatibility.
+      const nonDarbitexFirst = preview.best.thalaFirst;
+
+      let payload;
+      if (venue === "thala") {
+        if (!selectedThalaPool) return;
+        payload = buildRunArbPayload({
+          borrowAsset,
+          borrowAmountRaw,
+          otherAsset,
+          darbitexSwapPool: darbitexPool,
+          thalaSwapPool: selectedThalaPool,
+          thalaFirst: nonDarbitexFirst,
+          minNetProfitRaw,
+          deadlineSecs,
+        });
+      } else if (venue === "hyperion") {
+        if (!hyperionPool) return;
+        payload = buildRunArbHyperionPayload({
+          borrowAsset,
+          borrowAmountRaw,
+          otherAsset,
+          darbitexSwapPool: darbitexPool,
+          hyperionSwapPool: hyperionPool,
+          hyperionFirst: nonDarbitexFirst,
+          minNetProfitRaw,
+          deadlineSecs,
+        });
+      } else {
+        if (selectedCellanaStable === null) return;
+        payload = buildRunArbCellanaPayload({
+          borrowAsset,
+          borrowAmountRaw,
+          otherAsset,
+          darbitexSwapPool: darbitexPool,
+          isStable: selectedCellanaStable,
+          cellanaFirst: nonDarbitexFirst,
+          minNetProfitRaw,
+          deadlineSecs,
+        });
+      }
       const result = await signAndSubmitTransaction({
         data: {
           function: payload.function as `${string}::${string}::${string}`,
@@ -171,33 +263,74 @@ export function FlashbotPanel() {
     ? usdValueOf(callerShareFormatted, borrowAsset.symbol, aptPrice)
     : null;
 
+  const venueLabel =
+    venue === "thala" ? "Thala" : venue === "hyperion" ? "Hyperion" : "Cellana";
+  const scanDisabled =
+    scanning ||
+    !amount ||
+    !darbitexPool ||
+    borrowAsset.meta === otherAsset.meta ||
+    (venue === "thala" && !selectedThalaPool) ||
+    (venue === "hyperion" && !hyperionPool) ||
+    (venue === "cellana" && selectedCellanaStable === null);
+
   return (
     <div className="swap-card flashbot-panel">
-      <h3 className="flashbot-title">Cross-venue flash arb (Darbitex × Thala)</h3>
+      <h3 className="flashbot-title">Cross-venue flash arb (Darbitex × {venueLabel})</h3>
       <p className="modal-note">
-        Borrows from Aave (0 fee), swaps through Darbitex and Thala in whichever
-        direction is profitable, repays the flash loan, and splits the
-        residual <strong>90% to you</strong> and <strong>10% to the
-        hardcoded Darbitex treasury</strong>. Powered by the{" "}
-        <code>darbitex-flashbot</code> satellite.
+        Borrows from Aave (0 fee), swaps through Darbitex and {venueLabel} in
+        whichever direction is profitable, repays the flash loan, and splits the
+        residual <strong>90% to you</strong> and <strong>10% to the hardcoded
+        Darbitex treasury</strong>. Powered by the <code>darbitex-flashbot</code>{" "}
+        satellite.
       </p>
 
       <div className="swap-row">
+        <label>Venue</label>
+        <div className="venue-picker">
+          <button
+            type="button"
+            className={`btn ${venue === "thala" ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setVenue("thala")}
+          >
+            Thala V2
+          </button>
+          <button
+            type="button"
+            className={`btn ${venue === "hyperion" ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setVenue("hyperion")}
+          >
+            Hyperion CLMM
+          </button>
+          <button
+            type="button"
+            className={`btn ${venue === "cellana" ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setVenue("cellana")}
+          >
+            Cellana
+          </button>
+        </div>
+      </div>
+
+      <div className="swap-row">
         <label>Borrow asset</label>
-        <select
-          className="token-select full"
-          value={borrowAsset.symbol}
-          onChange={(e) => {
-            const t = tokenList.find((x) => x.symbol === e.target.value);
-            if (t) setBorrowAsset(t);
-          }}
-        >
-          {tokenList.map((t) => (
-            <option key={t.symbol} value={t.symbol}>
-              {t.symbol}
-            </option>
-          ))}
-        </select>
+        <span className="token-select-with-icon">
+          <TokenIcon token={borrowAsset} size={18} />
+          <select
+            className="token-select full"
+            value={borrowAsset.symbol}
+            onChange={(e) => {
+              const t = tokenList.find((x) => x.symbol === e.target.value);
+              if (t) setBorrowAsset(t);
+            }}
+          >
+            {tokenList.map((t) => (
+              <option key={t.symbol} value={t.symbol}>
+                {t.symbol}
+              </option>
+            ))}
+          </select>
+        </span>
       </div>
 
       <div className="swap-row">
@@ -216,20 +349,23 @@ export function FlashbotPanel() {
 
       <div className="swap-row">
         <label>Other asset</label>
-        <select
-          className="token-select full"
-          value={otherAsset.symbol}
-          onChange={(e) => {
-            const t = tokenList.find((x) => x.symbol === e.target.value);
-            if (t) setOtherAsset(t);
-          }}
-        >
-          {tokenList.map((t) => (
-            <option key={t.symbol} value={t.symbol}>
-              {t.symbol}
-            </option>
-          ))}
-        </select>
+        <span className="token-select-with-icon">
+          <TokenIcon token={otherAsset} size={18} />
+          <select
+            className="token-select full"
+            value={otherAsset.symbol}
+            onChange={(e) => {
+              const t = tokenList.find((x) => x.symbol === e.target.value);
+              if (t) setOtherAsset(t);
+            }}
+          >
+            {tokenList.map((t) => (
+              <option key={t.symbol} value={t.symbol}>
+                {t.symbol}
+              </option>
+            ))}
+          </select>
+        </span>
       </div>
 
       {darbitexPool && (
@@ -239,7 +375,7 @@ export function FlashbotPanel() {
         </div>
       )}
 
-      {thalaCandidates.length > 1 ? (
+      {venue === "thala" && thalaCandidates.length > 1 ? (
         <div className="swap-row">
           <label>Thala pool ({thalaCandidates.length} candidates)</label>
           <select
@@ -254,12 +390,38 @@ export function FlashbotPanel() {
             ))}
           </select>
         </div>
-      ) : selectedThalaPool ? (
+      ) : venue === "thala" && selectedThalaPool ? (
         <div className="modal-note">
           <strong>Thala pool:</strong> {selectedThalaPool.slice(0, 12)}…
           {selectedThalaPool.slice(-6)}
         </div>
       ) : null}
+
+      {venue === "hyperion" && hyperionPool && (
+        <div className="modal-note">
+          <strong>Hyperion pool:</strong> {hyperionPool.slice(0, 12)}…
+          {hyperionPool.slice(-6)} · tier {" "}
+          {/* tier is global HYPERION_ACTIVE_TIER, shown as "1" (5 bps) */}
+          5 bps
+        </div>
+      )}
+
+      {venue === "cellana" && cellanaCurves.length > 0 && (
+        <div className="swap-row">
+          <label>Cellana curve</label>
+          <select
+            className="token-select full"
+            value={selectedCellanaStable === null ? "" : selectedCellanaStable ? "stable" : "volatile"}
+            onChange={(e) => setSelectedCellanaStable(e.target.value === "stable")}
+          >
+            {cellanaCurves.map((s) => (
+              <option key={s ? "stable" : "volatile"} value={s ? "stable" : "volatile"}>
+                {s ? "Stable curve" : "Volatile curve"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {poolLookupErr && <div className="hint">{poolLookupErr}</div>}
 
@@ -267,9 +429,7 @@ export function FlashbotPanel() {
         type="button"
         className="primary"
         onClick={scan}
-        disabled={
-          scanning || !amount || !darbitexPool || !selectedThalaPool || borrowAsset.meta === otherAsset.meta
-        }
+        disabled={scanDisabled}
       >
         {scanning ? "Scanning both directions…" : "Scan profit"}
       </button>
@@ -285,7 +445,7 @@ export function FlashbotPanel() {
               <span>Profit</span>
             </div>
             <DirectionRow
-              label="Darbitex → Thala"
+              label={`Darbitex → ${venueLabel}`}
               row={preview.darbitexFirst}
               isBest={preview.best?.thalaFirst === false}
               borrowSymbol={borrowAsset.symbol}
@@ -294,7 +454,7 @@ export function FlashbotPanel() {
               otherDecimals={otherAsset.decimals}
             />
             <DirectionRow
-              label="Thala → Darbitex"
+              label={`${venueLabel} → Darbitex`}
               row={preview.thalaFirst}
               isBest={preview.best?.thalaFirst === true}
               borrowSymbol={borrowAsset.symbol}
@@ -307,7 +467,11 @@ export function FlashbotPanel() {
           {preview.best ? (
             <div className="surplus-note">
               Best:{" "}
-              <strong>{preview.best.thalaFirst ? "Thala → Darbitex" : "Darbitex → Thala"}</strong>
+              <strong>
+                {preview.best.thalaFirst
+                  ? `${venueLabel} → Darbitex`
+                  : `Darbitex → ${venueLabel}`}
+              </strong>
               {" · "}
               Your share (90%):{" "}
               <strong>
@@ -323,8 +487,8 @@ export function FlashbotPanel() {
           ) : (
             <div className="surplus-note dim">
               Neither direction is profitable at this size. Try a different
-              amount, pair, or Thala pool — or accept that the current pool
-              reserves don't offer a cycle above the 1 bps LP + gas floor.
+              amount, pair, venue, or pool — or accept that current reserves
+              don't offer a cycle above the LP + gas floor.
             </div>
           )}
         </>

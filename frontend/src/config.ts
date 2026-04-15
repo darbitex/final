@@ -110,6 +110,11 @@ export type TokenConfig = {
   meta: string;
   decimals: number;
   symbol: string;
+  /// Optional icon URL relative to the site root. Whitelisted tokens
+  /// ship bundled SVGs from public/tokens/; custom tokens resolved via
+  /// CreatePool "Other…" paste path rely on on-chain FA metadata's
+  /// icon_uri as a fallback.
+  icon?: string;
 };
 
 // On-chain verified FA metadata addresses (same as Beta — canonical
@@ -119,26 +124,31 @@ export const TOKENS: Record<string, TokenConfig> = {
     meta: "0x000000000000000000000000000000000000000000000000000000000000000a",
     decimals: 8,
     symbol: "APT",
+    icon: "/tokens/apt.svg",
   },
   USDC: {
     meta: "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
     decimals: 6,
     symbol: "USDC",
+    icon: "/tokens/usdc.svg",
   },
   USDt: {
     meta: "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b",
     decimals: 6,
     symbol: "USDt",
+    icon: "/tokens/usdt.svg",
   },
   lzUSDC: {
     meta: "0x2b3be0a97a73c87ff62cbdd36837a9fb5bbd1d7f06a73b7ed62ec15c5326c1b8",
     decimals: 6,
     symbol: "lzUSDC",
+    icon: "/tokens/lzusdc.svg",
   },
   lzUSDT: {
     meta: "0xe568e9322107a5c9ba4cbd05a630a5586aa73e744ada246c3efb0f4ce3e295f3",
     decimals: 6,
     symbol: "lzUSDT",
+    icon: "/tokens/lzusdt.svg",
   },
 };
 

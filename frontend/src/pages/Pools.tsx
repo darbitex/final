@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { AddLiquidityModal, type AddTarget } from "../components/AddLiquidityModal";
 import { CreatePoolModal } from "../components/CreatePoolModal";
 import { RemoveLiquidityModal, type RemoveTarget } from "../components/RemoveLiquidityModal";
-import { PACKAGE } from "../config";
+import { TokenIcon } from "../components/TokenIcon";
+import { PACKAGE, TOKENS } from "../config";
 import { fetchFaMetadata } from "../chain/balance";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 
@@ -161,6 +162,10 @@ export function PoolsPage() {
             <div key={r.address} className="pool-card">
               <div className="pool-card-head">
                 <span className="lp-pair">
+                  <span className="pair-with-icons">
+                    <TokenIcon token={TOKENS[r.symbolA] ?? { symbol: r.symbolA }} size={18} />
+                    <TokenIcon token={TOKENS[r.symbolB] ?? { symbol: r.symbolB }} size={18} />
+                  </span>{" "}
                   {r.symbolA}/{r.symbolB}
                 </span>
                 <a

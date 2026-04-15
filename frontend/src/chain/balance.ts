@@ -33,6 +33,8 @@ type FaMetadataResource = {
   symbol?: string;
   name?: string;
   decimals?: number | string;
+  icon_uri?: string;
+  project_uri?: string;
 };
 
 export type ResolvedFaMetadata = {
@@ -40,6 +42,11 @@ export type ResolvedFaMetadata = {
   symbol: string;
   decimals: number;
   name?: string;
+  /// FA's own icon URL, sourced from the on-chain Metadata resource.
+  /// Often empty for tokens that don't bother setting it. Not
+  /// guaranteed to be reachable — usually IPFS or a CDN controlled
+  /// by the issuer.
+  iconUri?: string;
 };
 
 const META_CACHE = new Map<string, ResolvedFaMetadata>();
@@ -68,11 +75,13 @@ export async function fetchFaMetadata(
       metadata,
       "0x1::fungible_asset::Metadata",
     );
+    const rawIcon = (d?.icon_uri ?? "").trim();
     const resolved: ResolvedFaMetadata = {
       meta: metadata,
       symbol: d?.symbol || `${metadata.slice(0, 6)}…`,
       decimals: Number.parseInt(String(d?.decimals ?? "0"), 10) || 0,
       name: d?.name,
+      iconUri: rawIcon.length > 0 ? rawIcon : undefined,
     };
     META_CACHE.set(key, resolved);
     return resolved;

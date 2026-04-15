@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
 import { RemoveLiquidityModal, type RemoveTarget } from "../components/RemoveLiquidityModal";
+import { TokenIcon } from "../components/TokenIcon";
 import { INITIAL_POOLS, PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { fetchFaBalance, fetchFaMetadata } from "../chain/balance";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
@@ -300,7 +301,11 @@ export function PortfolioPage() {
         {loadingBal && rows.length === 0 && <div className="hint">Loading…</div>}
         {rows.map((r) => (
           <div key={r.token.meta} className="pool-row portfolio-row">
-            <span className="pair">{r.token.symbol}</span>
+            <span className="pair">
+              <TokenIcon token={r.token} size={20} />
+              {" "}
+              {r.token.symbol}
+            </span>
             <span className="addr-short">
               <a
                 href={`https://explorer.aptoslabs.com/fungible_asset/${r.token.meta}?network=mainnet`}
@@ -347,6 +352,10 @@ export function PortfolioPage() {
         <div key={p.objectAddr} className="lp-card">
           <div className="lp-head">
             <span className="lp-pair">
+              <span className="pair-with-icons">
+                <TokenIcon token={TOKENS[p.symbolA] ?? { symbol: p.symbolA }} size={18} />
+                <TokenIcon token={TOKENS[p.symbolB] ?? { symbol: p.symbolB }} size={18} />
+              </span>{" "}
               {p.symbolA}/{p.symbolB}
             </span>
             <a

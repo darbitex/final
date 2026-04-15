@@ -1,0 +1,20 @@
+[package]
+# On-chain PackageRegistry at 0x8b4a2c4b... has a package literally
+# named "dex" — that's Hyperion's core CLMM package. Our flashbot
+# imports the `pool_v3::LiquidityPoolV3` type from here via the
+# `dex_contract` named-address alias, same way HyperionAdapter and
+# DarbitexAggregator declare it in their own Move.toml files.
+name = "dex"
+version = "0.1.0"
+upgrade_policy = "compatible"
+
+# Type-only stub: provides the `LiquidityPoolV3` struct name at the
+# expected module path. Real layout lives on-chain at 0x8b4a2c4b...;
+# this stub is just for compile-time type checking of `Object<...>`
+# handles flowing through flashbot. Fields are placeholders.
+
+[addresses]
+dex_contract = "0x8b4a2c4bb53857c718a04c020b98f8c2e1f99a68b0f57389a8bf5434cd22e05c"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
