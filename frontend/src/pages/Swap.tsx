@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
 import { PACKAGE, QUOTE_DEBOUNCE_MS, TOKENS, type TokenConfig } from "../config";
+import { useFaBalance } from "../chain/balance";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
 import { useAddress } from "../wallet/useConnect";
@@ -12,7 +13,7 @@ const rpc = createRpcPool("swap");
 type Side = "in" | "out";
 
 export function SwapPage() {
-  const { signAndSubmitTransaction } = useWallet();
+  const { signAndSubmitTransaction, connected } = useWallet();
   const address = useAddress();
   const [slippage] = useSlippage();
   const tokenList = useMemo(() => Object.values(TOKENS), []);
@@ -20,6 +21,9 @@ export function SwapPage() {
   const [tokenIn, setTokenIn] = useState<TokenConfig>(TOKENS.APT);
   const [tokenOut, setTokenOut] = useState<TokenConfig>(TOKENS.USDC);
   const [amountIn, setAmountIn] = useState("");
+
+  const balIn = useFaBalance(tokenIn.meta, tokenIn.decimals);
+  const balOut = useFaBalance(tokenOut.meta, tokenOut.decimals);
   const [quoting, setQuoting] = useState(false);
   const [quote, setQuote] = useState<{ pools: string[]; outRaw: bigint } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,11 +96,18 @@ export function SwapPage() {
         },
       });
       setLastTx(result.hash);
+      balIn.refresh();
+      balOut.refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function setMaxIn() {
+    if (balIn.raw === 0n) return;
+    setAmountIn(String(balIn.formatted));
   }
 
   const outDisplay = quote ? fromRaw(quote.outRaw, tokenOut.decimals).toFixed(6) : "—";
@@ -127,6 +138,16 @@ export function SwapPage() {
               side="in"
             />
           </div>
+          {connected && (
+            <button
+              type="button"
+              className="bal-link"
+              onClick={setMaxIn}
+              disabled={balIn.raw === 0n}
+            >
+              Balance: {balIn.loading ? "…" : balIn.formatted.toFixed(6)} {tokenIn.symbol}
+            </button>
+          )}
         </div>
 
         <button type="button" className="swap-flip" onClick={swapSides} aria-label="Flip">
@@ -144,6 +165,11 @@ export function SwapPage() {
               side="out"
             />
           </div>
+          {connected && (
+            <div className="bal-static">
+              Balance: {balOut.loading ? "…" : balOut.formatted.toFixed(6)} {tokenOut.symbol}
+            </div>
+          )}
         </div>
 
         {quote && quote.pools.length > 0 && (

@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { TOKENS, type TokenConfig } from "../config";
-import { createRpcPool, fromRaw } from "../chain/rpc-pool";
+import { fetchFaBalance } from "../chain/balance";
+import { fromRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
-
-const rpc = createRpcPool("portfolio");
 
 type BalanceRow = {
   token: TokenConfig;
@@ -29,16 +28,8 @@ export function PortfolioPage() {
       const results = await Promise.all(
         tokenList.map(async (token) => {
           try {
-            const balances = await rpc.primary.getCurrentFungibleAssetBalances({
-              options: {
-                where: {
-                  owner_address: { _eq: address },
-                  asset_type: { _eq: token.meta },
-                },
-              },
-            });
-            const amount = balances[0]?.amount ?? 0;
-            return { token, raw: BigInt(amount) };
+            const raw = await fetchFaBalance(address, token.meta);
+            return { token, raw };
           } catch (e) {
             return { token, raw: 0n, error: (e as Error).message };
           }
@@ -67,8 +58,8 @@ export function PortfolioPage() {
     <div className="container">
       <h1 className="page-title">Portfolio</h1>
       <p className="page-sub">
-        Balances for tracked tokens. LP positions are Aptos objects — view them on the
-        Explorer under your account's digital assets.
+        Balances via <code>0x1::primary_fungible_store::balance</code>. LP positions are
+        Aptos objects — view them on the Explorer under your account's digital assets.
       </p>
 
       <div className="portfolio-addr">
@@ -86,7 +77,7 @@ export function PortfolioPage() {
         </div>
         {loading && rows.length === 0 && <div className="hint">Loading…</div>}
         {rows.map((r) => (
-          <div key={r.token.meta} className="pool-row">
+          <div key={r.token.meta} className="pool-row portfolio-row">
             <span className="pair">{r.token.symbol}</span>
             <span className="addr-short">
               <a

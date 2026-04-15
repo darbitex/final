@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useMemo, useState } from "react";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
+import { useFaBalance } from "../chain/balance";
 import { toRaw } from "../chain/rpc-pool";
 import { Modal } from "./Modal";
 
@@ -30,6 +31,9 @@ export function CreatePoolModal({
   const [amountB, setAmountB] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
+
+  const balA = useFaBalance(tokenA.meta, tokenA.decimals);
+  const balB = useFaBalance(tokenB.meta, tokenB.decimals);
 
   const sameToken = tokenA.meta === tokenB.meta;
 
@@ -76,6 +80,8 @@ export function CreatePoolModal({
       });
       setAmountA("");
       setAmountB("");
+      balA.refresh();
+      balB.refresh();
       onCreated?.();
     } catch (e) {
       setStatus({ text: (e as Error).message, error: true });
@@ -114,6 +120,16 @@ export function CreatePoolModal({
         min="0"
         placeholder="0.0"
       />
+      {connected && (
+        <button
+          type="button"
+          className="bal-link bal-link-modal"
+          onClick={() => balA.raw > 0n && setAmountA(String(balA.formatted))}
+          disabled={balA.raw === 0n}
+        >
+          Balance: {balA.loading ? "…" : balA.formatted.toFixed(6)} {tokenA.symbol}
+        </button>
+      )}
 
       <label>Token B</label>
       <select
@@ -138,6 +154,16 @@ export function CreatePoolModal({
         min="0"
         placeholder="0.0"
       />
+      {connected && (
+        <button
+          type="button"
+          className="bal-link bal-link-modal"
+          onClick={() => balB.raw > 0n && setAmountB(String(balB.formatted))}
+          disabled={balB.raw === 0n}
+        >
+          Balance: {balB.loading ? "…" : balB.formatted.toFixed(6)} {tokenB.symbol}
+        </button>
+      )}
 
       {status && (
         <div className={`modal-status ${status.error ? "error" : ""}`}>{status.text}</div>
