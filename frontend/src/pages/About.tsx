@@ -2,10 +2,7 @@ export function AboutPage() {
   return (
     <div className="container about">
       <h1 className="page-title">About</h1>
-      <p className="tagline">
-        Programmable Arbitrage AMM on Aptos — 1 bps LP fee · smart routing + cycle closure +
-        flash arb · zero admin
-      </p>
+      <p className="tagline">Decentralized Arbitrage Exchange on Aptos</p>
 
       <div className="about-grid">
         <div className="about-stat">

@@ -11,7 +11,7 @@ checklists.
 ## Live site
 
 - **Site Object ID:** `0x55103b69b54462f9efc7f58c3c6d134702662a7112e3e4e418bea13cf08163b4`
-- **SuiNS binding:** `darbitex.sui` → `darbitex.wal.app` (repoint from beta object `0x050df98f...` pending — see "SuiNS repoint" below)
+- **SuiNS binding:** `darbitex.sui` → `darbitex.wal.app` — **LIVE** as of 2026-04-15 via ControllerV2 `set_user_data` (tx `ArDXs3FTyV26juAoQeCwtPuB33z76PuWNATA6SRHyG31`). Previously bound to beta object `0x050df98f...`.
 - **Walrus network:** mainnet
 - **Operational wallet:** `0x6915bc38bccd03a6295e9737143e4ef3318bcdc75be80a3114f317633bdd3304` (`~/.sui/sui_config/client.yaml`)
 - **SuiNS registration NFT:** `0x1700cba4a0eb8b17f75bf4e446144417c273b122f15b04655611c0233591d719` (holds `darbitex.sui`)
@@ -23,41 +23,54 @@ Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 1 | `0x0130baf88b7b4f311d83b3796c6cecb674d9c3223bee8e5b5e4f9e4a2f232c1b` | `HCZcwMsBOuf4tz25kdaAuRkNWbBzaIn_k7eKu4QikpU` | 1.70 MiB | 33 | ~2026-06-22 | full bundle — React 19 / Vite 6 / balance-fix + auto-calc add-liquidity deploy |
+| 1 | *(look up via explorer — share tx hit cosmetic RPC lag error but succeeded; list-blobs confirms)* | `qoQCLEzcgWJ84cv4igjivwMJ0R5teDef6bSmaVayy1s` | 1.70 MiB | 33 | ~2026-06-22 | full bundle — tagline fix ("Decentralized Arbitrage Exchange on Aptos") |
 
-Short lease (5 epochs) per the beta SOP. Not funded. Will be superseded
-on the next deploy; don't advertise public funding.
+Short lease (5 epochs) per the beta SOP. Not funded.
 
 **Superseded shared quilts:**
-- (none yet — initial deploy orphaned an owned blob which was burned, no shared orphans)
+- `0x0130baf88b7b4f311d83b3796c6cecb674d9c3223bee8e5b5e4f9e4a2f232c1b` (blob `HCZcwMsBOuf4tz25kdaAuRkNWbBzaIn_k7eKu4QikpU`) — balance-fix + auto-calc deploy 2026-04-15. Superseded within hours by tagline-fix deploy. Not funded, zero WAL loss.
 
 **Burned owned blobs:**
 - `0x5b65666cd84670fd74ad9f203d014748c09e5a31159032c09b0743d92cf211c5` (blob `tBm23JeUKeeKHbubQwDvFo3kAJV2WNMyU5YCVkRGxus`) — initial publish quilt. Superseded by the balance-fix update before ever being shared. Burned 2026-04-15, zero WAL loss.
 
-## SuiNS repoint (pending)
+## SuiNS repoint recipe (working 2026-04-15)
 
-The new site object `0x55103b69...` is live but not yet bound to
-`darbitex.wal.app` — SuiNS still points to the beta site object
-`0x050df98f...`. To flip:
+Done via `sui client call` against SuiNS ControllerV2. Same recipe used
+for the 2026-04-15 flip from beta → final:
 
-**Option A — SuiNS dApp (recommended, zero risk of wrong args):**
-1. Open https://suins.io in a browser with the operational wallet
-2. Find `darbitex.sui` in your names list
-3. Click "Walrus Site" / "Set Walrus Site" (UI label varies)
-4. Paste: `0x55103b69b54462f9efc7f58c3c6d134702662a7112e3e4e418bea13cf08163b4`
-5. Sign transaction
-6. Verify `https://darbitex.wal.app` serves the new site
+```bash
+sui client call \
+  --package 0x71af035413ed499710980ed8adb010bbf2cc5cacf4ab37c7710a4bb87eb58ba5 \
+  --module controller \
+  --function set_user_data \
+  --args \
+    0x6e0ddefc0ad98889c04bab9639e512c21766c5e6366f89e696956d9be6952871 \
+    0x1700cba4a0eb8b17f75bf4e446144417c273b122f15b04655611c0233591d719 \
+    "walrus_site_id" \
+    "0x55103b69b54462f9efc7f58c3c6d134702662a7112e3e4e418bea13cf08163b4" \
+    0x6 \
+  --gas-budget 50000000
+```
 
-**Option B — Sui CLI:**
-The SuiNS package is `0xd22b24490e0bae52676651b4f56660a5ff8022a2576e0089f79b3c88d44e08f0`.
-The Walrus-site name is stored in the SuiNS user data. The exact function
-name varies by SuiNS version; consult the SuiNS docs for the current CLI
-recipe before attempting. Do a dry-run first — a wrong arg burns gas.
+Args in order:
+1. SuiNS shared object `0x6e0ddefc...2871`
+2. `darbitex.sui` registration NFT `0x1700cba4...9d719`
+3. Key: literal string `"walrus_site_id"`
+4. Value: target site object ID as a 0x-prefixed hex string
+5. Clock `0x6`
+
+ControllerV2 `0x71af0354...58ba5` is the authorized controller —
+the original `0xb7004c79...` package fails with `assert_app_is_authorized`.
+
+Always dry-run first (`--dry-run`) to catch arg errors before spending
+gas. Cost: ~0.0016 SUI.
 
 ## Deploy history
 
-- **2026-04-15 initial publish:** `site-builder publish --epochs 5 dist --site-name "Darbitex"` → created site object `0x55103b69...`, owned blob `0x5b65666c...`. Initial frontend bundle (7 pages, no balance fix).
-- **2026-04-15 balance-fix update:** `site-builder update --epochs 5 dist 0x55103b69...` → replaced all resources with new quilt, created owned blob `0x71f9f475...`. Then shared as `0x0130baf8...`, orphaned blob `0x5b65666c...` burned.
+- **2026-04-15 initial publish:** `site-builder publish --epochs 5 dist --site-name "Darbitex"` → site object `0x55103b69...`, owned blob `0x5b65666c...`. Initial bundle (no balance fix).
+- **2026-04-15 balance-fix update:** `site-builder update` → owned blob `0x71f9f475...` → shared `0x0130baf8...`, orphan `0x5b65666c...` burned.
+- **2026-04-15 SuiNS repoint:** ControllerV2 `set_user_data(walrus_site_id = 0x55103b69...)` — tx `ArDXs3FTyV26juAoQeCwtPuB33z76PuWNATA6SRHyG31`. `darbitex.wal.app` now serves Final.
+- **2026-04-15 tagline fix update:** `site-builder update` → owned blob `0x4a4ac231...` → shared (cosmetic RPC lag on share tx, succeeded). Content blob `qoQCLEzcgWJ84cv4igjivwMJ0R5teDef6bSmaVayy1s`. Tagline changed from "Programmable Arbitrage AMM on Aptos" to "Decentralized Arbitrage Exchange on Aptos" (beta's original "permissionless V4 hooks DEX" tag was misleading — Final's novelty is CoW-inspired surplus-fee economics, not V4 hooks).
 
 ## Deploy checklist (MANDATORY ORDER)
 
