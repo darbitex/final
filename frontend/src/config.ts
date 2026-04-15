@@ -21,6 +21,19 @@ export const THALA_ADAPTER_PACKAGE =
 export const AGGREGATOR_PACKAGE =
   "0x838a981b43c5bf6fb1139a60ccd7851a4031cd31c775f71f963163c49ab62b47";
 
+// darbitex-flashbot POC v0.1 — cross-venue flash-arb satellite.
+// Single entry function `run_arb(caller, borrow_asset, borrow_amount,
+// other_asset, darbitex_swap_pool, thala_swap_pool, thala_first,
+// min_net_profit, deadline)`. Borrows from Aave (0 fee), swaps
+// through Darbitex + Thala in caller-chosen order, splits profit
+// 90% caller / 10% treasury (same hardcoded treasury as Final).
+// Single-sig publish under Final's hot wallet for POC velocity.
+// Two smoke-test txs on mainnet 2026-04-15 both succeeded at 100k
+// octas — see darbitex_final_deployed memory for tx hashes + decoded
+// events.
+export const FLASHBOT_PACKAGE =
+  "0x0047a3e13465172e10661e20b7b618235e9c7e62a365d315e91cf1ef647321c9";
+
 // Hyperion CLMM: we only query tier 1 (5 bps). Retired the 6-tier
 // enumeration on 2026-04-14 — mainnet scan verified only tier 1 holds
 // meaningful liquidity, the other five are dust or empty, so probing

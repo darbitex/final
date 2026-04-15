@@ -1,5 +1,6 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useMemo, useState } from "react";
+import { FlashbotPanel } from "../components/FlashbotPanel";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
@@ -314,6 +315,8 @@ export function ArbitragePage() {
           </div>
         )}
       </div>
+
+      <FlashbotPanel />
     </div>
   );
 }

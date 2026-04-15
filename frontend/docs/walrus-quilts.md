@@ -23,7 +23,7 @@ Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 1 | `0x95d422b7306332ed81795e225b88ca0be1901e9d0f7ff87efa40d9da9406e615` | `7z1X6Y7THIURenvHJIFJFRdL3g1uCCnPn9_37AKGmc0` | 2.12 MiB | 33 | ~2026-06-22 | polish batch — Cellana route label, Arbitrage slippage wiring, vite bundle split (main chunk 1674 KB → 15 KB), Thala seed comment fix |
+| 1 | `0x3364a735114f0dbf23a74d9f9094bf58a78095e606835bfee47396092b973dc0` | `YZBv8PpL7ws8FjMCfjtNVOTB3XJbYIQv7JKgpf9PwUM` | 2.12 MiB | 33 | ~2026-06-22 | flashbot panel — Arbitrage page gains cross-venue flash arb section wired to darbitex-flashbot satellite (`0x0047a3e1...::flashbot::run_arb`), off-chain preview via 4 parallel view calls, 90/10 split display |
 
 Short lease (5 epochs) per the beta SOP. Not funded.
 
@@ -51,7 +51,8 @@ one `walrus share`, one long-lease `walrus fund-shared-blob`. Costs
 ~0.08 WAL for 53 epochs storage on a ~2 MiB bundle.
 
 **Superseded shared quilts:**
-- `0xbb18ac8c8aae55ef1e08eaeab53cb53733e7398354605a68260e09a6271803d9` (blob `JsJZqQ-Ma8fnOWuDNEqyH-Zjz9h0KeLc6mFXDrff-V8`) — venue-adapters deploy 2026-04-15. Superseded by polish batch. Not funded, zero WAL loss.
+- `0x95d422b7306332ed81795e225b88ca0be1901e9d0f7ff87efa40d9da9406e615` (blob `7z1X6Y7THIURenvHJIFJFRdL3g1uCCnPn9_37AKGmc0`) — polish batch deploy 2026-04-15. Superseded by flashbot-panel deploy. Not funded, zero WAL loss.
+- `0xbb18ac8c8aae55ef1e08eaeab53cb53733e7398354605a68260e09a6271803d9` (blob `JsJZqQ-Ma8fnOWuDNEqyH-Zjz9h0KeLc6mFXDrff-V8`) — venue-adapters deploy 2026-04-15. Not funded, zero WAL loss.
 - `0x0130baf88b7b4f311d83b3796c6cecb674d9c3223bee8e5b5e4f9e4a2f232c1b` (blob `HCZcwMsBOuf4tz25kdaAuRkNWbBzaIn_k7eKu4QikpU`) — balance-fix + auto-calc deploy 2026-04-15. Not funded, zero WAL loss.
 
 **Burned owned blobs:**

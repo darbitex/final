@@ -939,3 +939,17 @@ a:hover { text-decoration: underline; }
   font-size: 11px;
   margin-left: 4px;
 }
+
+/* Flashbot panel — distinct accent so it reads as a separate
+   satellite section from the core arbitrage cycle UI above. */
+.flashbot-panel {
+  margin-top: 18px;
+  border-color: #3a2600;
+}
+.flashbot-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ff8800;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
