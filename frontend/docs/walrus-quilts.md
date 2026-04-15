@@ -23,7 +23,7 @@ Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 1 | *(look up via explorer — share tx hit cosmetic RPC lag error but succeeded; list-blobs confirms)* | `qoQCLEzcgWJ84cv4igjivwMJ0R5teDef6bSmaVayy1s` | 1.70 MiB | 33 | ~2026-06-22 | full bundle — tagline fix ("Decentralized Arbitrage Exchange on Aptos") |
+| 1 | `0xbb18ac8c8aae55ef1e08eaeab53cb53733e7398354605a68260e09a6271803d9` | `JsJZqQ-Ma8fnOWuDNEqyH-Zjz9h0KeLc6mFXDrff-V8` | 2.12 MiB | 33 | ~2026-06-22 | full bundle — Thala + Hyperion + Cellana venue adapters wired into Aggregator, About ELI5 rewrite |
 
 Short lease (5 epochs) per the beta SOP. Not funded.
 
