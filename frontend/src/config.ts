@@ -60,6 +60,12 @@ export const THALA_POOL_SEEDS: string[] = [
   "0x253f970b6a6f071b5fb63d3f16ea2685431a078f62bf98978b37bd0d169ff7c5",
 ];
 
+// Token Factory satellite — fire-and-forget FA creator. FROZEN (immutable).
+// 3/5 multisig (same owners as PACKAGE). Tiered ENS-style pricing,
+// ASCII-only symbols, fixed 1B supply, self-burn via BurnCap.
+export const FACTORY_PACKAGE =
+  "0xbaa604864b167f6fb139893ac68bc72c3ab7d57710de5d71531f09e45df00958";
+
 // LP Locker satellite — wraps LpPosition with time-based unlock.
 // 3/5 multisig (same owners as PACKAGE). claim_fees always allowed;
 // redeem gated by unlock_at.

@@ -19,6 +19,9 @@ const PortfolioPage = lazy(() =>
 const ProtocolPage = lazy(() =>
   import("./pages/Protocol").then((m) => ({ default: m.ProtocolPage })),
 );
+const FactoryPage = lazy(() =>
+  import("./pages/Factory").then((m) => ({ default: m.FactoryPage })),
+);
 const AboutPage = lazy(() => import("./pages/About").then((m) => ({ default: m.AboutPage })));
 
 function PageFallback() {
@@ -68,6 +71,14 @@ export function App() {
               element={
                 <Suspense fallback={<PageFallback />}>
                   <PortfolioPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="factory"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <FactoryPage />
                 </Suspense>
               }
             />

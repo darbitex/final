@@ -1022,3 +1022,42 @@ a:hover { text-decoration: underline; }
   font-size: 12px; color: #ccc; cursor: pointer;
 }
 .lock-checkbox input { accent-color: #ff8800; }
+
+/* Token Factory */
+.factory-card { padding: 16px; margin-bottom: 0; }
+.factory-label { display: block; margin-top: 10px; font-size: 12px; color: #999; }
+.factory-input {
+  display: block; width: 100%; margin-top: 4px; padding: 8px;
+  background: #111; color: #e0e0e0; border: 1px solid #333; border-radius: 4px;
+  font-family: inherit; font-size: 13px;
+}
+.factory-input:focus { border-color: #ff8800; outline: none; }
+.factory-fee-display {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 12px; padding: 8px 0; border-top: 1px solid #1a1a1a;
+  font-size: 14px;
+}
+.factory-fee-table {
+  margin: 8px 0; padding: 8px 12px; background: #0f0f0f;
+  border-radius: 4px; font-size: 11px;
+}
+.factory-fee-row {
+  display: flex; justify-content: space-between; padding: 2px 0;
+}
+.factory-specs {
+  margin: 10px 0; font-size: 12px; line-height: 1.8;
+}
+.factory-lookup-row {
+  display: flex; gap: 8px; margin-top: 8px;
+}
+.factory-lookup-row .factory-input { flex: 1; }
+.factory-lookup-result {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; font-size: 13px;
+}
+.lookup-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 4px; text-transform: uppercase;
+}
+.lookup-taken { background: rgba(255,60,60,0.15); color: #ff4444; }
+.lookup-available { background: rgba(0,200,80,0.15); color: #00cc55; }
