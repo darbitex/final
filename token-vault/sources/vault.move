@@ -372,6 +372,7 @@ module darbitex_vault::vault {
         assert!(amount > 0, E_ZERO_AMOUNT);
         let pool_addr = object::object_address(&pool);
         let rp = borrow_global_mut<RewardPool>(pool_addr);
+        update_reward_pool(rp);
 
         let fa = primary_fungible_store::withdraw(depositor, rp.reward_token, amount);
         let pool_signer = object::generate_signer_for_extending(&rp.extend_ref);

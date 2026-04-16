@@ -156,6 +156,7 @@ module darbitex_staking::staking {
         assert!(amount > 0, E_ZERO_AMOUNT);
         let rp_addr = object::object_address(&reward_pool);
         let rp = borrow_global_mut<LpRewardPool>(rp_addr);
+        update_pool(rp);
 
         let fa = primary_fungible_store::withdraw(depositor, rp.reward_token, amount);
         let rp_signer = object::generate_signer_for_extending(&rp.extend_ref);
