@@ -241,6 +241,10 @@ export function StakingPage() {
         </div>
       )}
 
+      {!address && (
+        <p className="page-sub">Connect your wallet to view your staked positions.</p>
+      )}
+
       {address && stakes.length > 0 && (
         <div className="card" style={{ padding: 16 }}>
           <h2 className="section-title">Your Staked Positions</h2>
@@ -310,11 +314,6 @@ export function StakingPage() {
         )}
       </div>
 
-      {!address && (
-        <p className="page-sub" style={{ marginTop: 12 }}>
-          Connect your wallet to view your staked positions.
-        </p>
-      )}
     </div>
   );
 }

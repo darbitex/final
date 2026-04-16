@@ -1,6 +1,6 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
-import { VAULT_PACKAGE, TOKENS, type TokenConfig } from "../config";
+import { VAULT_PACKAGE, TOKENS } from "../config";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
 
@@ -265,7 +265,6 @@ export function VaultPage() {
   const [lockDate, setLockDate] = useState("");
   const [locks, setLocks] = useState<LockEntry[]>([]);
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
-  const [dirLoading, setDirLoading] = useState(false);
 
   // Vest state
   const [vestToken, setVestToken] = useState("APT");
@@ -279,22 +278,22 @@ export function VaultPage() {
 
   const tokenList = Object.entries(TOKENS);
 
-  const selectedToken = (key: string): TokenConfig =>
-    TOKENS[key] ?? TOKENS.APT;
+  const selectedToken = (key: string) => TOKENS[key] ?? TOKENS.APT;
 
-  // Load user positions
   const loadPositions = useCallback(async () => {
-    if (!address) return;
     setLoading(true);
     try {
       if (tab === "lock") {
-        const [l, d] = await Promise.all([fetchUserLocks(address), fetchLockDirectory()]);
+        const [l, d] = await Promise.all([
+          address ? fetchUserLocks(address) : Promise.resolve([]),
+          fetchLockDirectory(),
+        ]);
         setLocks(l);
         setDirectory(d);
       } else if (tab === "vest") {
-        setVests(await fetchUserVests(address));
+        if (address) setVests(await fetchUserVests(address));
       } else {
-        setStakes(await fetchUserStakes(address));
+        if (address) setStakes(await fetchUserStakes(address));
       }
     } catch (e) {
       console.error("[vault]", e);
@@ -306,15 +305,6 @@ export function VaultPage() {
   useEffect(() => {
     loadPositions();
   }, [loadPositions]);
-
-  // Load directory on mount (public, no wallet needed)
-  useEffect(() => {
-    setDirLoading(true);
-    fetchLockDirectory()
-      .then(setDirectory)
-      .catch(() => {})
-      .finally(() => setDirLoading(false));
-  }, []);
 
   // ===== Actions =====
 
@@ -462,6 +452,9 @@ export function VaultPage() {
       {/* ===== LOCK TAB ===== */}
       {tab === "lock" && (
         <>
+          {!address && (
+            <p className="page-sub">Connect your wallet to lock tokens.</p>
+          )}
           {address && (
             <div className="card" style={{ padding: 16 }}>
               <h2 className="section-title">Lock Tokens</h2>
@@ -541,7 +534,7 @@ export function VaultPage() {
             <p style={{ fontSize: 11, color: "#666", marginBottom: 10 }}>
               All tokens currently locked via Darbitex Vault.
             </p>
-            {dirLoading ? (
+            {loading ? (
               <div className="dim" style={{ fontSize: 12 }}>Loading directory…</div>
             ) : directory.length === 0 ? (
               <div className="dim" style={{ fontSize: 12 }}>No tokens locked yet.</div>
@@ -713,11 +706,6 @@ export function VaultPage() {
         </>
       )}
 
-      {!address && tab === "lock" && (
-        <p className="page-sub" style={{ marginTop: 12 }}>
-          Connect your wallet to lock tokens.
-        </p>
-      )}
     </div>
   );
 }
