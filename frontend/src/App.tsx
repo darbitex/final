@@ -23,6 +23,7 @@ const FactoryPage = lazy(() =>
   import("./pages/Factory").then((m) => ({ default: m.FactoryPage })),
 );
 const VaultPage = lazy(() => import("./pages/Vault").then((m) => ({ default: m.VaultPage })));
+const StakingPage = lazy(() => import("./pages/Staking").then((m) => ({ default: m.StakingPage })));
 const AboutPage = lazy(() => import("./pages/About").then((m) => ({ default: m.AboutPage })));
 
 function PageFallback() {
@@ -88,6 +89,14 @@ export function App() {
               element={
                 <Suspense fallback={<PageFallback />}>
                   <VaultPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="staking"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <StakingPage />
                 </Suspense>
               }
             />

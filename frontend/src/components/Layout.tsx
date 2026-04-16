@@ -39,6 +39,7 @@ export function Layout() {
         <NavLink to="/portfolio">Portfolio</NavLink>
         <NavLink to="/factory">Factory</NavLink>
         <NavLink to="/vault">Vault</NavLink>
+        <NavLink to="/staking">Staking</NavLink>
         <NavLink to="/protocol">Protocol</NavLink>
         <NavLink to="/about">About</NavLink>
       </nav>

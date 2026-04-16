@@ -66,10 +66,16 @@ export const THALA_POOL_SEEDS: string[] = [
 export const FACTORY_PACKAGE =
   "0xbaa604864b167f6fb139893ac68bc72c3ab7d57710de5d71531f09e45df00958";
 
-// Token Vault satellite — lock/vest/stake for ANY FA token.
+// Token Vault satellite V2 — lock/vest/stake for ANY FA token.
 // 3/5 multisig (same owners as PACKAGE). FROZEN (immutable).
+// V1 at 0x962ef10a... DEPRECATED (retroactive drainage bug in deposit_rewards).
 export const VAULT_PACKAGE =
-  "0x962ef10a9d4720edd903172f6c0cd9657f2b19b608af029ab3483a798a95d118";
+  "0x8f4060790bdba617a34d7c55e2332400b4f592cd1037aa9acd0620811155d4eb";
+
+// LP Staking satellite — stake Darbitex LP positions, earn rewards.
+// 3/5 multisig (same owners as PACKAGE). Compatible (follows core).
+export const STAKING_PACKAGE =
+  "0xeec9f2361d1ae5e3ce5884523ad5d7bce6948d6ca12496bf0d8b8a6cbebaa050";
 
 // LP Locker satellite — wraps LpPosition with time-based unlock.
 // 3/5 multisig (same owners as PACKAGE). claim_fees always allowed;
