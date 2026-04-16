@@ -8,6 +8,7 @@ import {
   TREASURY_BPS,
   type TokenConfig,
 } from "../config";
+import { useFaBalance } from "../chain/balance";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
@@ -80,7 +81,7 @@ function seedRows(): QuoteRow[] {
 }
 
 export function AggregatorPage() {
-  const { signAndSubmitTransaction } = useWallet();
+  const { signAndSubmitTransaction, connected } = useWallet();
   const address = useAddress();
   const [slippage] = useSlippage();
   const aptPrice = useAptPriceUsd();
@@ -88,6 +89,8 @@ export function AggregatorPage() {
 
   const [tokenIn, setTokenIn] = useState<TokenConfig>(TOKENS.APT);
   const [tokenOut, setTokenOut] = useState<TokenConfig>(TOKENS.USDC);
+  const balIn = useFaBalance(tokenIn.meta, tokenIn.decimals);
+  const balOut = useFaBalance(tokenOut.meta, tokenOut.decimals);
   const [amountIn, setAmountIn] = useState("");
   const [rows, setRows] = useState<QuoteRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -271,6 +274,8 @@ export function AggregatorPage() {
           },
         });
         setLastTx(result.hash);
+        balIn.refresh();
+        balOut.refresh();
       } else {
         // Darbitex-internal: always through arbitrage::swap_entry so the
         // surplus rule applies uniformly, whether the winning path is
@@ -289,6 +294,8 @@ export function AggregatorPage() {
           },
         });
         setLastTx(result.hash);
+        balIn.refresh();
+        balOut.refresh();
       }
     } catch (e) {
       setError((e as Error).message);
@@ -340,6 +347,15 @@ export function AggregatorPage() {
             const u = usdValueOf(n, tokenIn.symbol, aptPrice);
             return u !== null ? <div className="usd-value">≈ {formatUsd(u)}</div> : null;
           })()}
+          {connected && (
+            <div className="bal-static">
+              Balance: {balIn.loading ? "…" : balIn.formatted.toFixed(6)} {tokenIn.symbol}
+              {(() => {
+                const u = usdValueOf(balIn.formatted, tokenIn.symbol, aptPrice);
+                return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+              })()}
+            </div>
+          )}
         </div>
         <div className="swap-row">
           <label>Output token</label>
@@ -360,6 +376,15 @@ export function AggregatorPage() {
               ))}
             </select>
           </span>
+          {connected && (
+            <div className="bal-static">
+              Balance: {balOut.loading ? "…" : balOut.formatted.toFixed(6)} {tokenOut.symbol}
+              {(() => {
+                const u = usdValueOf(balOut.formatted, tokenOut.symbol, aptPrice);
+                return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+              })()}
+            </div>
+          )}
         </div>
       </div>
 

@@ -1076,9 +1076,10 @@ a:hover { text-decoration: underline; }
   margin: 10px 0; font-size: 12px; line-height: 1.8;
 }
 .factory-lookup-row {
-  display: flex; gap: 8px; margin-top: 8px;
+  display: flex; gap: 8px; margin-top: 8px; align-items: center;
 }
-.factory-lookup-row .factory-input { flex: 1; }
+.factory-lookup-row .factory-input { flex: 1; min-width: 0; }
+.factory-lookup-row .btn { flex-shrink: 0; }
 .factory-lookup-result {
   display: flex; align-items: center; gap: 10px;
   margin-top: 10px; font-size: 13px;

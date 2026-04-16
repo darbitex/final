@@ -4,6 +4,7 @@ import { RemoveLiquidityModal, type RemoveTarget } from "../components/RemoveLiq
 import { TokenIcon } from "../components/TokenIcon";
 import { INITIAL_POOLS, LOCKER_PACKAGE, PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { fetchFaBalance, fetchFaMetadata } from "../chain/balance";
+import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
 
@@ -250,6 +251,7 @@ function formatCountdown(ts: number): string {
 export function PortfolioPage() {
   const address = useAddress();
   const { signAndSubmitTransaction } = useWallet();
+  const aptPrice = useAptPriceUsd();
   const [rows, setRows] = useState<BalanceRow[]>([]);
   const [loadingBal, setLoadingBal] = useState(false);
   const [positions, setPositions] = useState<LpEntry[]>([]);
@@ -471,7 +473,11 @@ export function PortfolioPage() {
               </a>
             </span>
             <span className="reserves">
-              {r.error ? "error" : fromRaw(r.raw, r.token.decimals).toFixed(6)}
+              {r.error ? "error" : (() => {
+                const f = fromRaw(r.raw, r.token.decimals);
+                const u = usdValueOf(f, r.token.symbol, aptPrice);
+                return <>{f.toFixed(6)}{u !== null && <span className="usd-inline"> · {formatUsd(u)}</span>}</>;
+              })()}
             </span>
           </div>
         ))}

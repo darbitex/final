@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { FlashbotPanel } from "../components/FlashbotPanel";
 import { TokenIcon } from "../components/TokenIcon";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
+import { useFaBalance } from "../chain/balance";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw, toRaw } from "../chain/rpc-pool";
 import { useSlippage } from "../chain/slippage";
@@ -19,7 +20,7 @@ type CycleQuote = {
 };
 
 export function ArbitragePage() {
-  const { signAndSubmitTransaction } = useWallet();
+  const { signAndSubmitTransaction, connected } = useWallet();
   const address = useAddress();
   const aptPrice = useAptPriceUsd();
   const [slippage] = useSlippage();
@@ -27,6 +28,7 @@ export function ArbitragePage() {
 
   const [mode, setMode] = useState<Mode>("flash");
   const [anchor, setAnchor] = useState<TokenConfig>(TOKENS.APT);
+  const balAnchor = useFaBalance(anchor.meta, anchor.decimals);
   const [amount, setAmount] = useState("");
   const [minNetProfit, setMinNetProfit] = useState("");
   const [manualOverride, setManualOverride] = useState(false);
@@ -130,6 +132,7 @@ export function ArbitragePage() {
         },
       });
       setLastTx(result.hash);
+      balAnchor.refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -182,6 +185,15 @@ export function ArbitragePage() {
               ))}
             </select>
           </span>
+          {connected && (
+            <div className="bal-static">
+              Balance: {balAnchor.loading ? "…" : balAnchor.formatted.toFixed(6)} {anchor.symbol}
+              {(() => {
+                const u = usdValueOf(balAnchor.formatted, anchor.symbol, aptPrice);
+                return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+              })()}
+            </div>
+          )}
         </div>
 
         <div className="swap-row">

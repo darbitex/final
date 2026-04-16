@@ -173,6 +173,12 @@ export const TOKENS: Record<string, TokenConfig> = {
     symbol: "lzUSDT",
     icon: "/tokens/lzusdt.svg",
   },
+  DARBITEX: {
+    meta: "0x8241d225df6dee465b2898686011c477d5863abccae16630c7145c3165e9c2d",
+    decimals: 8,
+    symbol: "DARBITEX",
+    icon: "/tokens/darbitex.svg",
+  },
 };
 
 export type PoolSeed = {

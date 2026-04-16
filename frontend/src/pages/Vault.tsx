@@ -1,6 +1,9 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
+import { TokenIcon } from "../components/TokenIcon";
 import { VAULT_PACKAGE, TOKENS } from "../config";
+import { useFaBalance } from "../chain/balance";
+import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
 
@@ -118,28 +121,39 @@ function TokenSelector({
   customInfo,
   onChange,
   onCustomAddrChange,
+  label,
 }: {
   value: string;
   customAddr: string;
   customInfo: { symbol: string; decimals: number } | null;
   onChange: (key: string) => void;
   onCustomAddrChange: (addr: string) => void;
+  label?: string;
 }) {
   const tokenList = Object.entries(TOKENS);
+  const selectedToken = value !== CUSTOM_KEY ? TOKENS[value] : null;
   return (
     <>
       <label className="lock-label">
-        Token
-        <select
-          className="lock-input"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {tokenList.map(([k, t]) => (
-            <option key={k} value={k}>{t.symbol}</option>
-          ))}
-          <option value={CUSTOM_KEY}>Custom token...</option>
-        </select>
+        {label ?? "Token"}
+        <span className="token-select-with-icon" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+          {selectedToken ? (
+            <TokenIcon token={selectedToken} size={20} />
+          ) : customInfo ? (
+            <TokenIcon token={{ symbol: customInfo.symbol }} size={20} />
+          ) : null}
+          <select
+            className="lock-input"
+            style={{ marginTop: 0, flex: 1 }}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            {tokenList.map(([k, t]) => (
+              <option key={k} value={k}>{t.symbol}</option>
+            ))}
+            <option value={CUSTOM_KEY}>Custom token...</option>
+          </select>
+        </span>
       </label>
       {value === CUSTOM_KEY && (
         <>
@@ -198,9 +212,14 @@ function useTokenSelector(initial: string = "APT") {
     return TOKENS[tokenKey]?.decimals ?? 8;
   }, [tokenKey, customInfo]);
 
+  const getSymbol = useCallback((): string => {
+    if (tokenKey === CUSTOM_KEY) return customInfo?.symbol ?? "?";
+    return TOKENS[tokenKey]?.symbol ?? "?";
+  }, [tokenKey, customInfo]);
+
   return {
     tokenKey, setTokenKey, customAddr, customInfo, resolving,
-    handleCustomAddrChange, getTokenMeta, getDecimals,
+    handleCustomAddrChange, getTokenMeta, getDecimals, getSymbol,
   };
 }
 
@@ -436,7 +455,8 @@ async function fetchRewardPools(): Promise<RewardPoolEntry[]> {
 
 export function VaultPage() {
   const address = useAddress();
-  const { signAndSubmitTransaction } = useWallet();
+  const { signAndSubmitTransaction, connected } = useWallet();
+  const aptPrice = useAptPriceUsd();
 
   const [tab, setTab] = useState<Tab>("lock");
   const [loading, setLoading] = useState(false);
@@ -444,6 +464,7 @@ export function VaultPage() {
 
   // Lock state
   const lockToken = useTokenSelector("APT");
+  const lockBal = useFaBalance(lockToken.getTokenMeta(), lockToken.getDecimals());
   const [lockAmount, setLockAmount] = useState("");
   const [lockDate, setLockDate] = useState("");
   const [locks, setLocks] = useState<LockEntry[]>([]);
@@ -451,6 +472,7 @@ export function VaultPage() {
 
   // Vest state
   const vestToken = useTokenSelector("APT");
+  const vestBal = useFaBalance(vestToken.getTokenMeta(), vestToken.getDecimals());
   const [vestAmount, setVestAmount] = useState("");
   const [vestStart, setVestStart] = useState("");
   const [vestEnd, setVestEnd] = useState("");
@@ -741,6 +763,15 @@ export function VaultPage() {
                 onChange={lockToken.setTokenKey}
                 onCustomAddrChange={lockToken.handleCustomAddrChange}
               />
+              {connected && (
+                <div className="bal-static" style={{ marginTop: 6, fontSize: 12 }}>
+                  Balance: {lockBal.loading ? "\u2026" : lockBal.formatted.toFixed(6)} {lockToken.getSymbol()}
+                  {(() => {
+                    const u = usdValueOf(lockBal.formatted, lockToken.getSymbol(), aptPrice);
+                    return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+                  })()}
+                </div>
+              )}
               <label className="lock-label">
                 Amount
                 <input
@@ -842,6 +873,15 @@ export function VaultPage() {
                 onChange={vestToken.setTokenKey}
                 onCustomAddrChange={vestToken.handleCustomAddrChange}
               />
+              {connected && (
+                <div className="bal-static" style={{ marginTop: 6, fontSize: 12 }}>
+                  Balance: {vestBal.loading ? "\u2026" : vestBal.formatted.toFixed(6)} {vestToken.getSymbol()}
+                  {(() => {
+                    const u = usdValueOf(vestBal.formatted, vestToken.getSymbol(), aptPrice);
+                    return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+                  })()}
+                </div>
+              )}
               <label className="lock-label">
                 Total amount
                 <input

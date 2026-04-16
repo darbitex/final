@@ -1,6 +1,9 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
+import { TokenIcon } from "../components/TokenIcon";
 import { STAKING_PACKAGE, TOKENS, INITIAL_POOLS } from "../config";
+import { useFaBalance } from "../chain/balance";
+import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
 
@@ -86,20 +89,29 @@ function TokenSelector({
   label?: string;
 }) {
   const tokenList = Object.entries(TOKENS);
+  const selectedToken = value !== CUSTOM_KEY ? TOKENS[value] : null;
   return (
     <>
       <label className="lock-label">
         {label ?? "Token"}
-        <select
-          className="lock-input"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {tokenList.map(([k, t]) => (
-            <option key={k} value={k}>{t.symbol}</option>
-          ))}
-          <option value={CUSTOM_KEY}>Custom token...</option>
-        </select>
+        <span className="token-select-with-icon" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+          {selectedToken ? (
+            <TokenIcon token={selectedToken} size={20} />
+          ) : customInfo ? (
+            <TokenIcon token={{ symbol: customInfo.symbol }} size={20} />
+          ) : null}
+          <select
+            className="lock-input"
+            style={{ marginTop: 0, flex: 1 }}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            {tokenList.map(([k, t]) => (
+              <option key={k} value={k}>{t.symbol}</option>
+            ))}
+            <option value={CUSTOM_KEY}>Custom token...</option>
+          </select>
+        </span>
       </label>
       {value === CUSTOM_KEY && (
         <>
@@ -155,9 +167,14 @@ function useTokenSelector(initial: string = "APT") {
     return TOKENS[tokenKey]?.decimals ?? 8;
   }, [tokenKey, customInfo]);
 
+  const getSymbol = useCallback((): string => {
+    if (tokenKey === CUSTOM_KEY) return customInfo?.symbol ?? "?";
+    return TOKENS[tokenKey]?.symbol ?? "?";
+  }, [tokenKey, customInfo]);
+
   return {
     tokenKey, setTokenKey, customAddr, customInfo,
-    handleCustomAddrChange, getTokenMeta, getDecimals,
+    handleCustomAddrChange, getTokenMeta, getDecimals, getSymbol,
   };
 }
 
@@ -274,7 +291,8 @@ function resolvePoolLabel(poolAddr: string): string {
 
 export function StakingPage() {
   const address = useAddress();
-  const { signAndSubmitTransaction } = useWallet();
+  const { signAndSubmitTransaction, connected } = useWallet();
+  const aptPrice = useAptPriceUsd();
 
   const [stakes, setStakes] = useState<StakeEntry[]>([]);
   const [pools, setPools] = useState<PoolEntry[]>([]);
@@ -285,6 +303,7 @@ export function StakingPage() {
   const [createPoolAddr, setCreatePoolAddr] = useState("");
   const [createCustomPoolAddr, setCreateCustomPoolAddr] = useState("");
   const rewardToken = useTokenSelector("APT");
+  const rewardTokenBal = useFaBalance(rewardToken.getTokenMeta(), rewardToken.getDecimals());
   const [createMaxRate, setCreateMaxRate] = useState("");
   const [createStakeTarget, setCreateStakeTarget] = useState("");
 
@@ -602,6 +621,15 @@ export function StakingPage() {
             onCustomAddrChange={rewardToken.handleCustomAddrChange}
             label="Reward token"
           />
+          {connected && (
+            <div className="bal-static" style={{ marginTop: 6, fontSize: 12 }}>
+              Balance: {rewardTokenBal.loading ? "\u2026" : rewardTokenBal.formatted.toFixed(6)} {rewardToken.getSymbol()}
+              {(() => {
+                const u = usdValueOf(rewardTokenBal.formatted, rewardToken.getSymbol(), aptPrice);
+                return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+              })()}
+            </div>
+          )}
           <label className="lock-label">
             Max rate (reward tokens per second at full capacity)
             <input

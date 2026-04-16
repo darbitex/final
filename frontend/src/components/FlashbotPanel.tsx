@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useMemo, useState } from "react";
 import { TOKENS, type TokenConfig } from "../config";
+import { useFaBalance } from "../chain/balance";
 import {
   buildRunArbCellanaPayload,
   buildRunArbHyperionPayload,
@@ -32,7 +33,7 @@ import { useAddress } from "../wallet/useConnect";
 // and the panel executes the winning direction with a slippage floor
 // applied to the caller-share (post 90/10 split).
 export function FlashbotPanel() {
-  const { signAndSubmitTransaction } = useWallet();
+  const { signAndSubmitTransaction, connected } = useWallet();
   const address = useAddress();
   const [slippage] = useSlippage();
   const aptPrice = useAptPriceUsd();
@@ -41,6 +42,7 @@ export function FlashbotPanel() {
   const [venue, setVenue] = useState<FlashbotVenue>("thala");
   const [borrowAsset, setBorrowAsset] = useState<TokenConfig>(TOKENS.APT);
   const [otherAsset, setOtherAsset] = useState<TokenConfig>(TOKENS.USDC);
+  const balBorrow = useFaBalance(borrowAsset.meta, borrowAsset.decimals);
   const [amount, setAmount] = useState("");
 
   const [darbitexPool, setDarbitexPool] = useState<string | null>(null);
@@ -331,6 +333,15 @@ export function FlashbotPanel() {
             ))}
           </select>
         </span>
+        {connected && (
+          <div className="bal-static">
+            Balance: {balBorrow.loading ? "…" : balBorrow.formatted.toFixed(6)} {borrowAsset.symbol}
+            {(() => {
+              const u = usdValueOf(balBorrow.formatted, borrowAsset.symbol, aptPrice);
+              return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
+            })()}
+          </div>
+        )}
       </div>
 
       <div className="swap-row">

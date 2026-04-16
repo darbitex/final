@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: false,
-    chunkSizeWarningLimit: 1100,
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
         // Split vendor deps into dedicated chunks so the user's first
