@@ -781,11 +781,39 @@ a:hover { text-decoration: underline; }
   margin: 4px 0 24px;
   letter-spacing: 0.01em;
 }
+.about-satellites {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 16px 0 24px;
+}
+.about-sat {
+  background: #111;
+  border: 1px solid #1a1a1a;
+  padding: 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.about-disclaimer {
+  background: #0f0f0f;
+  border: 1px solid #331a00;
+  border-radius: 6px;
+  padding: 20px;
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #bbb;
+}
+.about-disclaimer strong { color: #ff8800; }
+.about-disclaimer p { margin: 0 0 12px; }
+.about-disclaimer p:last-child { margin-bottom: 0; }
 
 @media (max-width: 600px) {
   .protocol-grid { grid-template-columns: 1fr; }
   .protocol-card, .protocol-card.small { grid-column: span 1; }
   .about-grid { grid-template-columns: repeat(2, 1fr); }
+  .about-satellites { grid-template-columns: 1fr; }
   .venue-head, .venue-table .venue-row { grid-template-columns: 1.1fr 0.7fr 1.2fr; }
 
   /* Pool rows collapse into stacked cards on narrow screens — the

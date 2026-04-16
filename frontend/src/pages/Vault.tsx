@@ -51,6 +51,20 @@ type DirectoryEntry = {
   lockCount: number;
 };
 
+type RewardPoolEntry = {
+  addr: string;
+  stakedMeta: string;
+  stakedSymbol: string;
+  stakedDecimals: number;
+  rewardMeta: string;
+  rewardSymbol: string;
+  rewardDecimals: number;
+  maxRate: number;
+  stakeTarget: number;
+  totalStaked: number;
+  rewardBalance: number;
+};
+
 // ===== Helpers =====
 
 function resolveToken(meta: string): { symbol: string; decimals: number } {
@@ -60,7 +74,27 @@ function resolveToken(meta: string): { symbol: string; decimals: number } {
       return { symbol: t.symbol, decimals: t.decimals };
     }
   }
-  return { symbol: meta.slice(0, 10) + "…", decimals: 8 };
+  return { symbol: meta.slice(0, 10) + "\u2026", decimals: 8 };
+}
+
+async function resolveCustomToken(meta: string): Promise<{ symbol: string; decimals: number } | null> {
+  const known = resolveToken(meta);
+  if (!known.symbol.endsWith("\u2026")) return known;
+  try {
+    const [symbol] = await rpc.rotatedView<[string]>({
+      function: "0x1::fungible_asset::symbol",
+      typeArguments: [],
+      functionArguments: [meta],
+    });
+    const [decimalsRaw] = await rpc.rotatedView<[string]>({
+      function: "0x1::fungible_asset::decimals",
+      typeArguments: [],
+      functionArguments: [meta],
+    });
+    return { symbol, decimals: Number(decimalsRaw) };
+  } catch {
+    return null;
+  }
 }
 
 function fmtDate(ts: number): string {
@@ -72,6 +106,102 @@ function fmtAmount(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
   return n.toFixed(n < 1 ? 6 : 2);
+}
+
+// ===== Token Selector =====
+
+const CUSTOM_KEY = "__custom__";
+
+function TokenSelector({
+  value,
+  customAddr,
+  customInfo,
+  onChange,
+  onCustomAddrChange,
+}: {
+  value: string;
+  customAddr: string;
+  customInfo: { symbol: string; decimals: number } | null;
+  onChange: (key: string) => void;
+  onCustomAddrChange: (addr: string) => void;
+}) {
+  const tokenList = Object.entries(TOKENS);
+  return (
+    <>
+      <label className="lock-label">
+        Token
+        <select
+          className="lock-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {tokenList.map(([k, t]) => (
+            <option key={k} value={k}>{t.symbol}</option>
+          ))}
+          <option value={CUSTOM_KEY}>Custom token...</option>
+        </select>
+      </label>
+      {value === CUSTOM_KEY && (
+        <>
+          <label className="lock-label">
+            FA metadata address
+            <input
+              className="lock-input"
+              type="text"
+              placeholder="0x..."
+              value={customAddr}
+              onChange={(e) => onCustomAddrChange(e.target.value)}
+            />
+          </label>
+          {customAddr && customInfo && (
+            <div style={{ fontSize: 11, color: "#00cc55", marginTop: 4 }}>
+              {customInfo.symbol} ({customInfo.decimals} decimals)
+            </div>
+          )}
+          {customAddr && !customInfo && customAddr.length > 10 && (
+            <div style={{ fontSize: 11, color: "#ff4444", marginTop: 4 }}>
+              Token not found
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function useTokenSelector(initial: string = "APT") {
+  const [tokenKey, setTokenKey] = useState(initial);
+  const [customAddr, setCustomAddr] = useState("");
+  const [customInfo, setCustomInfo] = useState<{ symbol: string; decimals: number } | null>(null);
+  const [resolving, setResolving] = useState(false);
+
+  const handleCustomAddrChange = useCallback(async (addr: string) => {
+    setCustomAddr(addr);
+    setCustomInfo(null);
+    const trimmed = addr.trim();
+    if (!trimmed || trimmed.length < 10) return;
+    setResolving(true);
+    const info = await resolveCustomToken(trimmed);
+    setCustomInfo(info);
+    setResolving(false);
+  }, []);
+
+  const getTokenMeta = useCallback((): string | null => {
+    if (tokenKey === CUSTOM_KEY) {
+      return customInfo ? customAddr.trim() : null;
+    }
+    return TOKENS[tokenKey]?.meta ?? null;
+  }, [tokenKey, customAddr, customInfo]);
+
+  const getDecimals = useCallback((): number => {
+    if (tokenKey === CUSTOM_KEY) return customInfo?.decimals ?? 8;
+    return TOKENS[tokenKey]?.decimals ?? 8;
+  }, [tokenKey, customInfo]);
+
+  return {
+    tokenKey, setTokenKey, customAddr, customInfo, resolving,
+    handleCustomAddrChange, getTokenMeta, getDecimals,
+  };
 }
 
 // ===== Data fetching =====
@@ -249,6 +379,59 @@ async function fetchLockDirectory(): Promise<DirectoryEntry[]> {
   }
 }
 
+async function fetchRewardPools(): Promise<RewardPoolEntry[]> {
+  try {
+    const res = await fetch("https://api.mainnet.aptoslabs.com/v1/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `{
+          events(
+            where: {type: {_eq: "${VAULT_PACKAGE}::vault::RewardPoolCreated"}}
+            order_by: {transaction_version: desc}
+            limit: 50
+          ) { data }
+        }`,
+      }),
+    }).then((r) => r.json());
+
+    const poolEvents = res?.data?.events ?? [];
+    const results: RewardPoolEntry[] = [];
+
+    for (const ev of poolEvents) {
+      const d = ev.data as { pool_addr: string };
+      try {
+        const [stakedMeta, rewardMeta, maxRateRaw, stakeTargetRaw, totalStakedRaw, rewardBalRaw] =
+          await rpc.rotatedView<[string, string, string, string, string, string]>({
+            function: `${VAULT_PACKAGE}::vault::reward_pool_info`,
+            typeArguments: [],
+            functionArguments: [d.pool_addr],
+          });
+        const stk = resolveToken(stakedMeta);
+        const rwd = resolveToken(rewardMeta);
+        results.push({
+          addr: d.pool_addr,
+          stakedMeta,
+          stakedSymbol: stk.symbol,
+          stakedDecimals: stk.decimals,
+          rewardMeta,
+          rewardSymbol: rwd.symbol,
+          rewardDecimals: rwd.decimals,
+          maxRate: fromRaw(maxRateRaw, rwd.decimals),
+          stakeTarget: fromRaw(stakeTargetRaw, stk.decimals),
+          totalStaked: fromRaw(totalStakedRaw, stk.decimals),
+          rewardBalance: fromRaw(rewardBalRaw, rwd.decimals),
+        });
+      } catch {
+        // pool may be gone
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 // ===== Component =====
 
 export function VaultPage() {
@@ -260,14 +443,14 @@ export function VaultPage() {
   const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null);
 
   // Lock state
-  const [lockToken, setLockToken] = useState("APT");
+  const lockToken = useTokenSelector("APT");
   const [lockAmount, setLockAmount] = useState("");
   const [lockDate, setLockDate] = useState("");
   const [locks, setLocks] = useState<LockEntry[]>([]);
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
 
   // Vest state
-  const [vestToken, setVestToken] = useState("APT");
+  const vestToken = useTokenSelector("APT");
   const [vestAmount, setVestAmount] = useState("");
   const [vestStart, setVestStart] = useState("");
   const [vestEnd, setVestEnd] = useState("");
@@ -275,10 +458,21 @@ export function VaultPage() {
 
   // Stake state
   const [stakes, setStakes] = useState<StakeEntry[]>([]);
+  const [rewardPools, setRewardPools] = useState<RewardPoolEntry[]>([]);
 
-  const tokenList = Object.entries(TOKENS);
+  // Create reward pool state
+  const createStakedToken = useTokenSelector("APT");
+  const createRewardToken = useTokenSelector("APT");
+  const [createMaxRate, setCreateMaxRate] = useState("");
+  const [createStakeTarget, setCreateStakeTarget] = useState("");
 
-  const selectedToken = (key: string) => TOKENS[key] ?? TOKENS.APT;
+  // Deposit rewards state
+  const [depositPoolAddr, setDepositPoolAddr] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+
+  // Stake tokens state
+  const [stakePoolAddr, setStakePoolAddr] = useState("");
+  const [stakeAmount, setStakeAmount] = useState("");
 
   const loadPositions = useCallback(async () => {
     setLoading(true);
@@ -293,7 +487,12 @@ export function VaultPage() {
       } else if (tab === "vest") {
         if (address) setVests(await fetchUserVests(address));
       } else {
-        if (address) setStakes(await fetchUserStakes(address));
+        const [s, rp] = await Promise.all([
+          address ? fetchUserStakes(address) : Promise.resolve([]),
+          fetchRewardPools(),
+        ]);
+        setStakes(s);
+        setRewardPools(rp);
       }
     } catch (e) {
       console.error("[vault]", e);
@@ -309,20 +508,21 @@ export function VaultPage() {
   // ===== Actions =====
 
   const handleLock = useCallback(async () => {
-    const tk = selectedToken(lockToken);
-    const raw = Math.floor(Number(lockAmount) * 10 ** tk.decimals);
+    const meta = lockToken.getTokenMeta();
+    const decimals = lockToken.getDecimals();
+    const raw = Math.floor(Number(lockAmount) * 10 ** decimals);
     const unlockAt = Math.floor(new Date(lockDate).getTime() / 1000);
-    if (!raw || !unlockAt || !address) return;
+    if (!raw || !unlockAt || !address || !meta) return;
     setMsg(null);
     try {
       const r = await signAndSubmitTransaction({
         data: {
           function: `${VAULT_PACKAGE}::vault::lock_tokens`,
           typeArguments: [],
-          functionArguments: [tk.meta, raw.toString(), unlockAt.toString()],
+          functionArguments: [meta, raw.toString(), unlockAt.toString()],
         },
       });
-      setMsg({ text: `Locked: ${r.hash.slice(0, 12)}…`, error: false });
+      setMsg({ text: `Locked: ${r.hash.slice(0, 12)}\u2026`, error: false });
       setLockAmount("");
       setLockDate("");
       loadPositions();
@@ -341,7 +541,7 @@ export function VaultPage() {
           functionArguments: [lockerAddr],
         },
       });
-      setMsg({ text: `Redeemed: ${r.hash.slice(0, 12)}…`, error: false });
+      setMsg({ text: `Redeemed: ${r.hash.slice(0, 12)}\u2026`, error: false });
       loadPositions();
     } catch (e) {
       setMsg({ text: (e as Error).message, error: true });
@@ -349,21 +549,22 @@ export function VaultPage() {
   }, [signAndSubmitTransaction, loadPositions]);
 
   const handleCreateVest = useCallback(async () => {
-    const tk = selectedToken(vestToken);
-    const raw = Math.floor(Number(vestAmount) * 10 ** tk.decimals);
+    const meta = vestToken.getTokenMeta();
+    const decimals = vestToken.getDecimals();
+    const raw = Math.floor(Number(vestAmount) * 10 ** decimals);
     const start = Math.floor(new Date(vestStart).getTime() / 1000);
     const end = Math.floor(new Date(vestEnd).getTime() / 1000);
-    if (!raw || !start || !end || !address) return;
+    if (!raw || !start || !end || !address || !meta) return;
     setMsg(null);
     try {
       const r = await signAndSubmitTransaction({
         data: {
           function: `${VAULT_PACKAGE}::vault::create_vesting`,
           typeArguments: [],
-          functionArguments: [tk.meta, raw.toString(), start.toString(), end.toString()],
+          functionArguments: [meta, raw.toString(), start.toString(), end.toString()],
         },
       });
-      setMsg({ text: `Vesting created: ${r.hash.slice(0, 12)}…`, error: false });
+      setMsg({ text: `Vesting created: ${r.hash.slice(0, 12)}\u2026`, error: false });
       setVestAmount("");
       setVestStart("");
       setVestEnd("");
@@ -383,12 +584,87 @@ export function VaultPage() {
           functionArguments: [vestAddr],
         },
       });
-      setMsg({ text: `Claimed: ${r.hash.slice(0, 12)}…`, error: false });
+      setMsg({ text: `Claimed: ${r.hash.slice(0, 12)}\u2026`, error: false });
       loadPositions();
     } catch (e) {
       setMsg({ text: (e as Error).message, error: true });
     }
   }, [signAndSubmitTransaction, loadPositions]);
+
+  const handleCreateRewardPool = useCallback(async () => {
+    const stakedMeta = createStakedToken.getTokenMeta();
+    const rewardMeta = createRewardToken.getTokenMeta();
+    const rewardDecimals = createRewardToken.getDecimals();
+    const stakedDecimals = createStakedToken.getDecimals();
+    const maxRateRaw = Math.floor(Number(createMaxRate) * 10 ** rewardDecimals);
+    const stakeTargetRaw = Math.floor(Number(createStakeTarget) * 10 ** stakedDecimals);
+    if (!stakedMeta || !rewardMeta || !maxRateRaw || !stakeTargetRaw || !address) return;
+    setMsg(null);
+    try {
+      const r = await signAndSubmitTransaction({
+        data: {
+          function: `${VAULT_PACKAGE}::vault::create_reward_pool`,
+          typeArguments: [],
+          functionArguments: [
+            stakedMeta,
+            rewardMeta,
+            maxRateRaw.toString(),
+            stakeTargetRaw.toString(),
+          ],
+        },
+      });
+      setMsg({ text: `Pool created: ${r.hash.slice(0, 12)}\u2026`, error: false });
+      setCreateMaxRate("");
+      setCreateStakeTarget("");
+      loadPositions();
+    } catch (e) {
+      setMsg({ text: (e as Error).message, error: true });
+    }
+  }, [address, createStakedToken, createRewardToken, createMaxRate, createStakeTarget, signAndSubmitTransaction, loadPositions]);
+
+  const handleDepositRewards = useCallback(async () => {
+    const pool = rewardPools.find((p) => p.addr === depositPoolAddr);
+    if (!pool || !address) return;
+    const raw = Math.floor(Number(depositAmount) * 10 ** pool.rewardDecimals);
+    if (!raw) return;
+    setMsg(null);
+    try {
+      const r = await signAndSubmitTransaction({
+        data: {
+          function: `${VAULT_PACKAGE}::vault::deposit_rewards`,
+          typeArguments: [],
+          functionArguments: [depositPoolAddr, raw.toString()],
+        },
+      });
+      setMsg({ text: `Deposited: ${r.hash.slice(0, 12)}\u2026`, error: false });
+      setDepositAmount("");
+      loadPositions();
+    } catch (e) {
+      setMsg({ text: (e as Error).message, error: true });
+    }
+  }, [address, depositPoolAddr, depositAmount, rewardPools, signAndSubmitTransaction, loadPositions]);
+
+  const handleStakeTokens = useCallback(async () => {
+    const pool = rewardPools.find((p) => p.addr === stakePoolAddr);
+    if (!pool || !address) return;
+    const raw = Math.floor(Number(stakeAmount) * 10 ** pool.stakedDecimals);
+    if (!raw) return;
+    setMsg(null);
+    try {
+      const r = await signAndSubmitTransaction({
+        data: {
+          function: `${VAULT_PACKAGE}::vault::stake_tokens`,
+          typeArguments: [],
+          functionArguments: [stakePoolAddr, raw.toString()],
+        },
+      });
+      setMsg({ text: `Staked: ${r.hash.slice(0, 12)}\u2026`, error: false });
+      setStakeAmount("");
+      loadPositions();
+    } catch (e) {
+      setMsg({ text: (e as Error).message, error: true });
+    }
+  }, [address, stakePoolAddr, stakeAmount, rewardPools, signAndSubmitTransaction, loadPositions]);
 
   const handleClaimStake = useCallback(async (stakeAddr: string) => {
     setMsg(null);
@@ -400,7 +676,7 @@ export function VaultPage() {
           functionArguments: [stakeAddr],
         },
       });
-      setMsg({ text: `Rewards claimed: ${r.hash.slice(0, 12)}…`, error: false });
+      setMsg({ text: `Rewards claimed: ${r.hash.slice(0, 12)}\u2026`, error: false });
       loadPositions();
     } catch (e) {
       setMsg({ text: (e as Error).message, error: true });
@@ -417,7 +693,7 @@ export function VaultPage() {
           functionArguments: [stakeAddr],
         },
       });
-      setMsg({ text: `Unstaked: ${r.hash.slice(0, 12)}…`, error: false });
+      setMsg({ text: `Unstaked: ${r.hash.slice(0, 12)}\u2026`, error: false });
       loadPositions();
     } catch (e) {
       setMsg({ text: (e as Error).message, error: true });
@@ -458,18 +734,13 @@ export function VaultPage() {
           {address && (
             <div className="card" style={{ padding: 16 }}>
               <h2 className="section-title">Lock Tokens</h2>
-              <label className="lock-label">
-                Token
-                <select
-                  className="lock-input"
-                  value={lockToken}
-                  onChange={(e) => setLockToken(e.target.value)}
-                >
-                  {tokenList.map(([k, t]) => (
-                    <option key={k} value={k}>{t.symbol}</option>
-                  ))}
-                </select>
-              </label>
+              <TokenSelector
+                value={lockToken.tokenKey}
+                customAddr={lockToken.customAddr}
+                customInfo={lockToken.customInfo}
+                onChange={lockToken.setTokenKey}
+                onCustomAddrChange={lockToken.handleCustomAddrChange}
+              />
               <label className="lock-label">
                 Amount
                 <input
@@ -495,7 +766,7 @@ export function VaultPage() {
               <button
                 className="btn btn-primary"
                 style={{ width: "100%", marginTop: 12 }}
-                disabled={!lockAmount || !lockDate}
+                disabled={!lockAmount || !lockDate || (lockToken.tokenKey === CUSTOM_KEY && !lockToken.customInfo)}
                 onClick={handleLock}
               >
                 Lock Tokens
@@ -527,7 +798,7 @@ export function VaultPage() {
             </div>
           )}
 
-          {loading && <div className="page-loading">Loading…</div>}
+          {loading && <div className="page-loading">Loading\u2026</div>}
 
           <div className="card" style={{ padding: 16, marginTop: 12 }}>
             <h2 className="section-title">Locked Tokens Directory</h2>
@@ -535,7 +806,7 @@ export function VaultPage() {
               All tokens currently locked via Darbitex Vault.
             </p>
             {loading ? (
-              <div className="dim" style={{ fontSize: 12 }}>Loading directory…</div>
+              <div className="dim" style={{ fontSize: 12 }}>Loading directory\u2026</div>
             ) : directory.length === 0 ? (
               <div className="dim" style={{ fontSize: 12 }}>No tokens locked yet.</div>
             ) : (
@@ -564,18 +835,13 @@ export function VaultPage() {
           {address && (
             <div className="card" style={{ padding: 16 }}>
               <h2 className="section-title">Create Vesting</h2>
-              <label className="lock-label">
-                Token
-                <select
-                  className="lock-input"
-                  value={vestToken}
-                  onChange={(e) => setVestToken(e.target.value)}
-                >
-                  {tokenList.map(([k, t]) => (
-                    <option key={k} value={k}>{t.symbol}</option>
-                  ))}
-                </select>
-              </label>
+              <TokenSelector
+                value={vestToken.tokenKey}
+                customAddr={vestToken.customAddr}
+                customInfo={vestToken.customInfo}
+                onChange={vestToken.setTokenKey}
+                onCustomAddrChange={vestToken.handleCustomAddrChange}
+              />
               <label className="lock-label">
                 Total amount
                 <input
@@ -610,7 +876,7 @@ export function VaultPage() {
               <button
                 className="btn btn-primary"
                 style={{ width: "100%", marginTop: 12 }}
-                disabled={!vestAmount || !vestStart || !vestEnd}
+                disabled={!vestAmount || !vestStart || !vestEnd || (vestToken.tokenKey === CUSTOM_KEY && !vestToken.customInfo)}
                 onClick={handleCreateVest}
               >
                 Create Vesting
@@ -652,21 +918,52 @@ export function VaultPage() {
           {!address && (
             <p className="page-sub">Connect your wallet to create vesting schedules.</p>
           )}
-          {loading && <div className="page-loading">Loading…</div>}
+          {loading && <div className="page-loading">Loading\u2026</div>}
         </>
       )}
 
       {/* ===== STAKE TAB ===== */}
       {tab === "stake" && (
         <>
+          {/* Reward Pool Directory */}
+          <div className="card" style={{ padding: 16 }}>
+            <h2 className="section-title">Reward Pools</h2>
+            <p style={{ fontSize: 11, color: "#666", marginBottom: 10 }}>
+              Active staking reward pools. Stake tokens to earn rewards over time.
+            </p>
+            {loading ? (
+              <div className="dim" style={{ fontSize: 12 }}>Loading\u2026</div>
+            ) : rewardPools.length === 0 ? (
+              <div className="dim" style={{ fontSize: 12 }}>No reward pools yet.</div>
+            ) : (
+              <div className="vault-directory">
+                <div className="vault-dir-header" style={{ gridTemplateColumns: "1fr 1fr 1fr 80px" }}>
+                  <span>Stake</span>
+                  <span>Reward</span>
+                  <span>Staked</span>
+                  <span>Balance</span>
+                </div>
+                {rewardPools.map((p) => (
+                  <div key={p.addr} className="vault-dir-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 80px" }}>
+                    <span><strong>{p.stakedSymbol}</strong></span>
+                    <span>{p.rewardSymbol}</span>
+                    <span>{fmtAmount(p.totalStaked)}</span>
+                    <span>{fmtAmount(p.rewardBalance)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Your Stake Positions */}
           {address && stakes.length > 0 && (
-            <div className="card" style={{ padding: 16 }}>
+            <div className="card" style={{ padding: 16, marginTop: 12 }}>
               <h2 className="section-title">Your Stake Positions</h2>
               {stakes.map((s) => (
                 <div key={s.addr} className="vault-row">
                   <div className="vault-row-info">
                     <strong>{fmtAmount(s.amount)} {s.stakedSymbol}</strong>
-                    <span className="dim">Pool {s.poolAddr.slice(0, 10)}…</span>
+                    <span className="dim">Pool {s.poolAddr.slice(0, 10)}\u2026</span>
                     {s.pending > 0 && (
                       <span style={{ color: "#00cc55", fontSize: 11 }}>
                         {fmtAmount(s.pending)} {s.rewardSymbol} pending
@@ -693,16 +990,160 @@ export function VaultPage() {
             </div>
           )}
 
-          {address && stakes.length === 0 && !loading && (
-            <div className="card" style={{ padding: 16 }}>
-              <p className="dim" style={{ fontSize: 12 }}>No stake positions found.</p>
+          {/* Stake Tokens into a Pool */}
+          {address && rewardPools.length > 0 && (
+            <div className="card" style={{ padding: 16, marginTop: 12 }}>
+              <h2 className="section-title">Stake Tokens</h2>
+              <label className="lock-label">
+                Reward Pool
+                <select
+                  className="lock-input"
+                  value={stakePoolAddr}
+                  onChange={(e) => setStakePoolAddr(e.target.value)}
+                >
+                  <option value="">Select a pool...</option>
+                  {rewardPools.map((p) => (
+                    <option key={p.addr} value={p.addr}>
+                      Stake {p.stakedSymbol} — Earn {p.rewardSymbol} ({p.addr.slice(0, 10)}\u2026)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {stakePoolAddr && (
+                <label className="lock-label">
+                  Amount ({rewardPools.find((p) => p.addr === stakePoolAddr)?.stakedSymbol})
+                  <input
+                    className="lock-input"
+                    type="number"
+                    placeholder="0.00"
+                    value={stakeAmount}
+                    onChange={(e) => setStakeAmount(e.target.value)}
+                  />
+                </label>
+              )}
+              <div style={{ marginTop: 10, fontSize: 12 }}>
+                <span className="dim">Fee:</span> <strong>1 APT</strong>
+              </div>
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%", marginTop: 12 }}
+                disabled={!stakePoolAddr || !stakeAmount}
+                onClick={handleStakeTokens}
+              >
+                Stake
+              </button>
+            </div>
+          )}
+
+          {/* Deposit Rewards into a Pool */}
+          {address && rewardPools.length > 0 && (
+            <div className="card" style={{ padding: 16, marginTop: 12 }}>
+              <h2 className="section-title">Deposit Rewards</h2>
+              <p style={{ fontSize: 11, color: "#666", marginBottom: 6 }}>
+                Top up reward balance for an existing pool. Anyone can deposit.
+              </p>
+              <label className="lock-label">
+                Reward Pool
+                <select
+                  className="lock-input"
+                  value={depositPoolAddr}
+                  onChange={(e) => setDepositPoolAddr(e.target.value)}
+                >
+                  <option value="">Select a pool...</option>
+                  {rewardPools.map((p) => (
+                    <option key={p.addr} value={p.addr}>
+                      {p.rewardSymbol} rewards — {p.stakedSymbol} staking ({p.addr.slice(0, 10)}\u2026)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {depositPoolAddr && (
+                <label className="lock-label">
+                  Amount ({rewardPools.find((p) => p.addr === depositPoolAddr)?.rewardSymbol})
+                  <input
+                    className="lock-input"
+                    type="number"
+                    placeholder="0.00"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                  />
+                </label>
+              )}
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%", marginTop: 12 }}
+                disabled={!depositPoolAddr || !depositAmount}
+                onClick={handleDepositRewards}
+              >
+                Deposit Rewards
+              </button>
+            </div>
+          )}
+
+          {/* Create Reward Pool */}
+          {address && (
+            <div className="card" style={{ padding: 16, marginTop: 12 }}>
+              <h2 className="section-title">Create Reward Pool</h2>
+              <p style={{ fontSize: 11, color: "#666", marginBottom: 6 }}>
+                Create a new staking pool. Stakers deposit the staked token and earn the reward token over time.
+              </p>
+              <div style={{ fontSize: 11, color: "#999", marginBottom: 4 }}>Staked token</div>
+              <TokenSelector
+                value={createStakedToken.tokenKey}
+                customAddr={createStakedToken.customAddr}
+                customInfo={createStakedToken.customInfo}
+                onChange={createStakedToken.setTokenKey}
+                onCustomAddrChange={createStakedToken.handleCustomAddrChange}
+              />
+              <div style={{ fontSize: 11, color: "#999", marginTop: 12, marginBottom: 4 }}>Reward token</div>
+              <TokenSelector
+                value={createRewardToken.tokenKey}
+                customAddr={createRewardToken.customAddr}
+                customInfo={createRewardToken.customInfo}
+                onChange={createRewardToken.setTokenKey}
+                onCustomAddrChange={createRewardToken.handleCustomAddrChange}
+              />
+              <label className="lock-label">
+                Max rate (reward tokens per second at full capacity)
+                <input
+                  className="lock-input"
+                  type="number"
+                  placeholder="0.001"
+                  value={createMaxRate}
+                  onChange={(e) => setCreateMaxRate(e.target.value)}
+                />
+              </label>
+              <label className="lock-label">
+                Stake target (staked amount for full emission rate)
+                <input
+                  className="lock-input"
+                  type="number"
+                  placeholder="1000"
+                  value={createStakeTarget}
+                  onChange={(e) => setCreateStakeTarget(e.target.value)}
+                />
+              </label>
+              <div style={{ marginTop: 10, fontSize: 12 }}>
+                <span className="dim">Fee:</span> <strong>1 APT</strong>
+              </div>
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%", marginTop: 12 }}
+                disabled={
+                  !createMaxRate || !createStakeTarget ||
+                  (createStakedToken.tokenKey === CUSTOM_KEY && !createStakedToken.customInfo) ||
+                  (createRewardToken.tokenKey === CUSTOM_KEY && !createRewardToken.customInfo)
+                }
+                onClick={handleCreateRewardPool}
+              >
+                Create Reward Pool
+              </button>
             </div>
           )}
 
           {!address && (
-            <p className="page-sub">Connect your wallet to view stake positions.</p>
+            <p className="page-sub">Connect your wallet to stake tokens.</p>
           )}
-          {loading && <div className="page-loading">Loading…</div>}
         </>
       )}
 
