@@ -61,6 +61,7 @@ async function discoverLpPositions(
   try {
     const owned = await rpc.primary.getAccountOwnedObjects({
       accountAddress: owner,
+      options: { limit: 500 },
     });
     const out: DiscoveredPosition[] = [];
     for (const obj of owned) {

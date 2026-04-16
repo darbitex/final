@@ -60,6 +60,12 @@ export const THALA_POOL_SEEDS: string[] = [
   "0x253f970b6a6f071b5fb63d3f16ea2685431a078f62bf98978b37bd0d169ff7c5",
 ];
 
+// LP Locker satellite — wraps LpPosition with time-based unlock.
+// 3/5 multisig (same owners as PACKAGE). claim_fees always allowed;
+// redeem gated by unlock_at.
+export const LOCKER_PACKAGE =
+  "0x45aeb4023c7072427820e72fc247180f56c3d8d381ce6d8ee9ee7bc671d7dfc5";
+
 // Hardcoded Move constant in arbitrage.move. 3-of-5 multisig.
 export const TREASURY =
   "0xdbce89113a975826028236f910668c3ff99c8db8981be6a448caa2f8836f9576";

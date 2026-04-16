@@ -1,0 +1,14 @@
+[package]
+name = "DarbitexTestnetFixture"
+version = "0.1.0"
+upgrade_policy = "compatible"
+authors = ["Rera", "Claude (Anthropic)"]
+license = "Unlicense"
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[addresses]
+testnet_fixture = "_"

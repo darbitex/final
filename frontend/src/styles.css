@@ -995,3 +995,30 @@ a:hover { text-decoration: underline; }
   margin-left: -8px;
   box-shadow: 0 0 0 1px #0a0a0a;
 }
+
+/* LP Locker */
+.locked-card { border-left: 3px solid #ff8800; }
+.lock-badge {
+  font-size: 11px; font-weight: 600; color: #ff8800;
+  background: rgba(255,136,0,0.1); padding: 2px 8px; border-radius: 4px;
+}
+.lock-warning {
+  background: rgba(255,136,0,0.08); border: 1px solid rgba(255,136,0,0.3);
+  border-radius: 6px; padding: 12px 14px; margin: 10px 0; font-size: 12px;
+  line-height: 1.6;
+}
+.lock-warning strong { color: #ff8800; }
+.lock-warning ul { margin: 6px 0 0 18px; }
+.lock-warning li { margin-bottom: 4px; }
+.lock-label { display: block; margin-top: 10px; font-size: 12px; color: #999; }
+.lock-input {
+  display: block; width: 100%; margin-top: 4px; padding: 8px;
+  background: #111; color: #e0e0e0; border: 1px solid #333; border-radius: 4px;
+  font-family: inherit; font-size: 13px;
+}
+.lock-input:focus { border-color: #ff8800; outline: none; }
+.lock-checkbox {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  font-size: 12px; color: #ccc; cursor: pointer;
+}
+.lock-checkbox input { accent-color: #ff8800; }
