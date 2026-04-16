@@ -812,4 +812,14 @@ module darbitex::pool {
         let p = borrow_global<Pool>(pool_addr);
         (p.metadata_a, p.metadata_b)
     }
+
+    #[view]
+    public fun lp_supply(pool_addr: address): u64 acquires Pool {
+        borrow_global<Pool>(pool_addr).lp_supply
+    }
+
+    #[view]
+    public fun position_shares(pos: Object<LpPosition>): u64 acquires LpPosition {
+        borrow_global<LpPosition>(object::object_address(&pos)).shares
+    }
 }
