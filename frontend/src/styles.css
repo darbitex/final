@@ -1061,3 +1061,36 @@ a:hover { text-decoration: underline; }
 }
 .lookup-taken { background: rgba(255,60,60,0.15); color: #ff4444; }
 .lookup-available { background: rgba(0,200,80,0.15); color: #00cc55; }
+
+/* Token Vault */
+.vault-tabs {
+  display: flex; gap: 0; margin-bottom: 16px;
+  border: 1px solid #1a1a1a; border-radius: 8px; overflow: hidden;
+}
+.vault-tab {
+  flex: 1; padding: 10px; text-align: center;
+  background: #111; border: none; color: #666;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.vault-tab:not(:last-child) { border-right: 1px solid #1a1a1a; }
+.vault-tab:hover { color: #aaa; }
+.vault-tab.active { background: #1a1a1a; color: #ff8800; }
+.vault-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid #1a1a1a;
+}
+.vault-row:last-child { border-bottom: none; }
+.vault-row-info {
+  display: flex; flex-direction: column; gap: 2px; font-size: 13px;
+}
+.vault-directory { font-size: 12px; }
+.vault-dir-header {
+  display: grid; grid-template-columns: 1fr 1fr 60px;
+  padding: 6px 0; border-bottom: 1px solid #1a1a1a;
+  color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.vault-dir-row {
+  display: grid; grid-template-columns: 1fr 1fr 60px;
+  padding: 8px 0; border-bottom: 1px solid #0f0f0f;
+}

@@ -66,6 +66,11 @@ export const THALA_POOL_SEEDS: string[] = [
 export const FACTORY_PACKAGE =
   "0xbaa604864b167f6fb139893ac68bc72c3ab7d57710de5d71531f09e45df00958";
 
+// Token Vault satellite — lock/vest/stake for ANY FA token.
+// 3/5 multisig (same owners as PACKAGE). FROZEN (immutable).
+export const VAULT_PACKAGE =
+  "0x962ef10a9d4720edd903172f6c0cd9657f2b19b608af029ab3483a798a95d118";
+
 // LP Locker satellite — wraps LpPosition with time-based unlock.
 // 3/5 multisig (same owners as PACKAGE). claim_fees always allowed;
 // redeem gated by unlock_at.

@@ -23,7 +23,8 @@ Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 3 | `0xb2a8cc47a232e66843c111f6bca720f789068a88146f4b07e5e807bdd102be27` | `UePDnSrsfbXAZokOcXOIUXNMqEal_6jOuUlw1p5mxwE` | 2.12 MiB | 33 | ~2026-06-22 | LP Locker integration: Portfolio locked section, lock modal + warning, claim fees via locker, pagination fix (limit 500). |
+| 4 | `0x8dbec1739ea346fa5d93f494de50ccf311225000c87ffa3f3bd74220e083bbd0` | `VWle4x3WgWC1_fOE6AHJAt5Yim8uBNT8cyJ2qS0UgsI` | 2.12 MiB | 33 | ~2026-06-22 | Token Vault page: 3-tab (Lock/Vest/Stake) + Locked Tokens Directory via indexer GraphQL. |
+| 3 | `0xb2a8cc47a232e66843c111f6bca720f789068a88146f4b07e5e807bdd102be27` | `UePDnSrsfbXAZokOcXOIUXNMqEal_6jOuUlw1p5mxwE` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #4 on 2026-04-16.** Left to expire. |
 | 2 | `0x6eac05c0969c81ffa429bbe8b8eef9c9adfe067539c12617e95d17bf94436339` | `ix5pr4pFD7mM4YGivnzBOK99qE7tCm334EkSjLwA2yw` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #3 on 2026-04-16.** Left to expire. |
 | 1 | `0x3364a735114f0dbf23a74d9f9094bf58a78095e606835bfee47396092b973dc0` | `YZBv8PpL7ws8FjMCfjtNVOTB3XJbYIQv7JKgpf9PwUM` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — left to expire.** |
 
