@@ -19,11 +19,12 @@ checklists.
 
 ## Active shared quilts
 
-Last verified: **2026-04-15** (epoch 28, epoch duration 14 days).
+Last verified: **2026-04-16** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 6 | `0x66a8fa6b34622051b99de17fa00b27f5ebb1140f75c58ce21a0535a449d8fbf1` | `Qckp27xBxHpn0mJFOefc-nyUUHqMNisDv1XcyqMOmhY` | 2.12 MiB | 33 | ~2026-06-22 | Frontend nit fixes: double fetch, connect-wallet ordering, unused import. |
+| 7 | `0xe0ebd8e1890ca8ba56dc124207e2cead3b2c2d8d8319fa097b9a50c73e19de39` | `JdTIvKArablz0SKYIF39ovwr0sw7lLR2No2Y3HGq0nY` | 2.12 MiB | 33 | ~2026-06-22 | Vault/Staking reward pool UX + custom tokens + onepager/about rewrite + disclaimer. |
+| 6 | `0x66a8fa6b34622051b99de17fa00b27f5ebb1140f75c58ce21a0535a449d8fbf1` | `Qckp27xBxHpn0mJFOefc-nyUUHqMNisDv1XcyqMOmhY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #7 on 2026-04-16.** Left to expire. |
 | 5 | `0x1f1571624c038dfd80adc4727400cbe665a93aec35f9092c047b654244ac7f8b` | `htC_lTxdk7YNvMejtwcDM4iSyB_q6CdJLLENbX_uwus` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #6 on 2026-04-16.** Left to expire. |
 | 4 | `0x8dbec1739ea346fa5d93f494de50ccf311225000c87ffa3f3bd74220e083bbd0` | `VWle4x3WgWC1_fOE6AHJAt5Yim8uBNT8cyJ2qS0UgsI` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #5 on 2026-04-16.** Left to expire. |
 | 3 | `0xb2a8cc47a232e66843c111f6bca720f789068a88146f4b07e5e807bdd102be27` | `UePDnSrsfbXAZokOcXOIUXNMqEal_6jOuUlw1p5mxwE` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #4 on 2026-04-16.** Left to expire. |
@@ -100,6 +101,7 @@ gas. Cost: ~0.0016 SUI.
 - **2026-04-15 initial publish:** `site-builder publish --epochs 5 dist --site-name "Darbitex"` → site object `0x55103b69...`, owned blob `0x5b65666c...`. Initial bundle (no balance fix).
 - **2026-04-15 balance-fix update:** `site-builder update` → owned blob `0x71f9f475...` → shared `0x0130baf8...`, orphan `0x5b65666c...` burned.
 - **2026-04-15 SuiNS repoint:** ControllerV2 `set_user_data(walrus_site_id = 0x55103b69...)` — tx `ArDXs3FTyV26juAoQeCwtPuB33z76PuWNATA6SRHyG31`. `darbitex.wal.app` now serves Final.
+- **2026-04-16 vault/staking/about rewrite:** `site-builder update` → owned blob `0xce130512...` → shared `0xe0ebd8e1...`. Vault + Staking reward pool creation UX, custom token selector, onepager + About page rewrite with full satellite ecosystem coverage, hard disclaimer (AI-built, experimental, use=agree).
 - **2026-04-15 tagline fix update:** `site-builder update` → owned blob `0x4a4ac231...` → shared (cosmetic RPC lag on share tx, succeeded). Content blob `qoQCLEzcgWJ84cv4igjivwMJ0R5teDef6bSmaVayy1s`. Tagline changed from "Programmable Arbitrage AMM on Aptos" to "Decentralized Arbitrage Exchange on Aptos" (beta's original "permissionless V4 hooks DEX" tag was misleading — Final's novelty is CoW-inspired surplus-fee economics, not V4 hooks).
 
 ## Deploy checklist (MANDATORY ORDER)
