@@ -40,6 +40,15 @@ export const FLASHBOT_PACKAGE =
 // them burned 15 RPC calls per quote for zero benefit.
 export const HYPERION_ACTIVE_TIER = 1;
 
+// Darbitex Hyperion Router — smart cross-tier + flash-arb satellite
+// 3/5 multisig publisher. v0.2.0 live with on-chain events.
+export const HYPERION_ROUTER_PACKAGE =
+  "0x4f54bca9333b94a334f0036fea3aa848e7722f7be0e63087cc4814c84797986a";
+
+// Hyperion pool_v3 type — for frontend type args when passing Object<Pool>.
+export const HYPERION_POOL_TYPE =
+  "0x8b4a2c4bb53857c718a04c020b98f8c2e1f99a68b0f57389a8bf5434cd22e05c::pool_v3::LiquidityPoolV3";
+
 // Curated Thala V2 pool seeds. Assets are discovered at runtime via
 // adapter::pool_assets. Adding a new Thala pool means appending its
 // address here — no Move or TypeScript changes required.

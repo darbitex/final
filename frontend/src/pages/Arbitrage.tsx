@@ -1,6 +1,7 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useMemo, useState } from "react";
 import { FlashbotPanel } from "../components/FlashbotPanel";
+import { HyperionRouterPanel } from "../components/HyperionRouterPanel";
 import { TokenIcon } from "../components/TokenIcon";
 import { PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { useFaBalance } from "../chain/balance";
@@ -333,6 +334,7 @@ export function ArbitragePage() {
       </div>
 
       <FlashbotPanel />
+      <HyperionRouterPanel />
     </div>
   );
 }

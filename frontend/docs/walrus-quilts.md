@@ -19,11 +19,12 @@ checklists.
 
 ## Active shared quilts
 
-Last verified: **2026-04-16** (epoch 28, epoch duration 14 days).
+Last verified: **2026-04-17** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 8 | `0x319fa60a59d2000aaa07cae35a596652d9617e6bf30b8993b57ccc84c2ece964` | `VKKBU31-HybAD90CiXzpy3ZYWDjqFgfZOgc4WWH4ZYY` | 2.12 MiB | 33 | ~2026-06-22 | DARBITEX token + balance/USD everywhere + token icons + factory CSS fix. |
+| 9 | `0xbbe5960d658b840b513513c00b00cbe4e4cf526aecd302b6f449d557d5c51658` | `-PdAO5Kv6M-pEaChTEHQNmo92MIRfyYyxpRGbOncVi0` | 2.12 MiB | 33 | ~2026-06-22 | **Hyperion Router panel** in Arbitrage page — cross-tier flash-arb UI using `HYPERION_ROUTER_PACKAGE` (`0x4f54bca9...`) with `flash_arb_cross_tier` entry, scan-log progress, pool-depth warning. |
+| 8 | `0x319fa60a59d2000aaa07cae35a596652d9617e6bf30b8993b57ccc84c2ece964` | `VKKBU31-HybAD90CiXzpy3ZYWDjqFgfZOgc4WWH4ZYY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #9 on 2026-04-17.** Left to expire. |
 | 7 | `0xe0ebd8e1890ca8ba56dc124207e2cead3b2c2d8d8319fa097b9a50c73e19de39` | `JdTIvKArablz0SKYIF39ovwr0sw7lLR2No2Y3HGq0nY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #8 on 2026-04-16.** Left to expire. |
 | 6 | `0x66a8fa6b34622051b99de17fa00b27f5ebb1140f75c58ce21a0535a449d8fbf1` | `Qckp27xBxHpn0mJFOefc-nyUUHqMNisDv1XcyqMOmhY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #7 on 2026-04-16.** Left to expire. |
 | 5 | `0x1f1571624c038dfd80adc4727400cbe665a93aec35f9092c047b654244ac7f8b` | `htC_lTxdk7YNvMejtwcDM4iSyB_q6CdJLLENbX_uwus` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #6 on 2026-04-16.** Left to expire. |
