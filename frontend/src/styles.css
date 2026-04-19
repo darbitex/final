@@ -59,10 +59,10 @@ a:hover { text-decoration: underline; }
 .nav::-webkit-scrollbar { display: none; }
 .nav a {
   flex: 1 0 auto;
-  padding: 12px 14px;
+  padding: 10px 11px;
   text-align: center;
   color: #555;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;

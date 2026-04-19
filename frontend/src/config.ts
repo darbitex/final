@@ -92,6 +92,16 @@ export const STAKING_PACKAGE =
 export const LOCKER_PACKAGE =
   "0x45aeb4023c7072427820e72fc247180f56c3d8d381ce6d8ee9ee7bc671d7dfc5";
 
+// Disperse satellite — bulk FA airdrop (uniform + custom amounts).
+// 3/5 multisig, owner set has 0x0047 swapped in for 0x85 vs treasury.
+// Flat 1 APT fee per call to TREASURY. Compatible upgrade policy.
+export const DISPERSE_PACKAGE =
+  "0x3b9514c83249434306d69747a6e4eef303e6ac690fb6efc57fb0c23d7cc4d95a";
+
+export const DISPERSE_FEE_OCTAS = 100_000_000n;
+export const DISPERSE_MAX_PER_TX = 600;
+export const DISPERSE_FEE_CONFIRM_THRESHOLD_OCTAS = 500_000_000n;
+
 // Hardcoded Move constant in arbitrage.move. 3-of-5 multisig.
 export const TREASURY =
   "0xdbce89113a975826028236f910668c3ff99c8db8981be6a448caa2f8836f9576";
