@@ -19,11 +19,12 @@ checklists.
 
 ## Active shared quilts
 
-Last verified: **2026-04-17** (epoch 28, epoch duration 14 days).
+Last verified: **2026-04-19** (epoch 28, epoch duration 14 days).
 
 | # | Shared Object ID | Blob ID (content hash) | Size | Exp. epoch | Exp. date | Resources |
 |---|---|---|---|---|---|---|
-| 9 | `0xbbe5960d658b840b513513c00b00cbe4e4cf526aecd302b6f449d557d5c51658` | `-PdAO5Kv6M-pEaChTEHQNmo92MIRfyYyxpRGbOncVi0` | 2.12 MiB | 33 | ~2026-06-22 | **Hyperion Router panel** in Arbitrage page — cross-tier flash-arb UI using `HYPERION_ROUTER_PACKAGE` (`0x4f54bca9...`) with `flash_arb_cross_tier` entry, scan-log progress, pool-depth warning. |
+| 10 | `0xadd94a7ed6a83d0fbf3ca33420912c12015ea2a3ea8bd476a68a9caf8df6ae98` | `IOqlKUU6Jkh8I0CQKk98XfXlssklsqrYxZwMGMt4das` | 2.12 MiB | 33 | ~2026-06-22 | **Disperse page** — `/disperse` route, bulk FA airdrop UI using `DISPERSE_PACKAGE` (`0x3b9514c8...d95a`). 3 sources: CSV, FA holders, NFT holders (via Aptos indexer GraphQL). Token dropdown TOKENS + custom FA. Uniform/custom amount modes, 600 recipients/batch, progress bar, fee-confirm gate ≥ 5 APT. Nav restyled 10/11px padding 12px font for 11-item layout. |
+| 9 | `0xbbe5960d658b840b513513c00b00cbe4e4cf526aecd302b6f449d557d5c51658` | `-PdAO5Kv6M-pEaChTEHQNmo92MIRfyYyxpRGbOncVi0` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #10 on 2026-04-19.** Left to expire. |
 | 8 | `0x319fa60a59d2000aaa07cae35a596652d9617e6bf30b8993b57ccc84c2ece964` | `VKKBU31-HybAD90CiXzpy3ZYWDjqFgfZOgc4WWH4ZYY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #9 on 2026-04-17.** Left to expire. |
 | 7 | `0xe0ebd8e1890ca8ba56dc124207e2cead3b2c2d8d8319fa097b9a50c73e19de39` | `JdTIvKArablz0SKYIF39ovwr0sw7lLR2No2Y3HGq0nY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #8 on 2026-04-16.** Left to expire. |
 | 6 | `0x66a8fa6b34622051b99de17fa00b27f5ebb1140f75c58ce21a0535a449d8fbf1` | `Qckp27xBxHpn0mJFOefc-nyUUHqMNisDv1XcyqMOmhY` | 2.12 MiB | 33 | ~2026-06-22 | **ORPHANED — replaced by #7 on 2026-04-16.** Left to expire. |
@@ -106,6 +107,7 @@ gas. Cost: ~0.0016 SUI.
 - **2026-04-16 DARBITEX token + balance/USD:** `site-builder update` → owned blob `0xb78291dc...` → shared `0x319fa60a...`. DARBITEX in all dropdowns, balance + USD on all pages, token icons in Vault/Staking, factory CSS fix, chunk warning suppressed.
 - **2026-04-16 vault/staking/about rewrite:** `site-builder update` → owned blob `0xce130512...` → shared `0xe0ebd8e1...`. Vault + Staking reward pool creation UX, custom token selector, onepager + About page rewrite with full satellite ecosystem coverage, hard disclaimer (AI-built, experimental, use=agree).
 - **2026-04-15 tagline fix update:** `site-builder update` → owned blob `0x4a4ac231...` → shared (cosmetic RPC lag on share tx, succeeded). Content blob `qoQCLEzcgWJ84cv4igjivwMJ0R5teDef6bSmaVayy1s`. Tagline changed from "Programmable Arbitrage AMM on Aptos" to "Decentralized Arbitrage Exchange on Aptos" (beta's original "permissionless V4 hooks DEX" tag was misleading — Final's novelty is CoW-inspired surplus-fee economics, not V4 hooks).
+- **2026-04-19 Disperse page:** `site-builder update` → owned blob `0x72ca6afa...` → shared `0xadd94a7e...`. New `/disperse` route (bulk FA airdrop via `DISPERSE_PACKAGE` `0x3b9514c8...d95a` 3/5 multisig). 3 recipient sources (CSV paste, FA holders, NFT holders — via Aptos indexer GraphQL with Geomi API key). Token dropdown from `TOKENS` config + "Custom token…" fallback that auto-resolves symbol+decimals via `fungible_asset::{symbol,decimals}`. 600 recipients/batch (< 64 KB payload), uniform/custom amount modes, window.confirm gate when total protocol fee ≥ 5 APT. Nav restyled (10/11px padding, 12px font) to fit 11th item.
 
 ## Deploy checklist (MANDATORY ORDER)
 
