@@ -121,6 +121,30 @@ completeness; source + audits in their own repos.
 | Thala adapter | `0x583d93de...` | 3/5 |
 | Hyperion adapter | `0x5b4bf2a4...` | — |
 | Hyperion router | `0x4f54bca9333b94a334f0036fea3aa848e7722f7be0e63087cc4814c84797986a` | 3/5 |
+| Disperse | `0x3b9514c83249434306d69747a6e4eef303e6ac690fb6efc57fb0c23d7cc4d95a` | 3/5 |
+
+### Disperse (`github.com/darbitex/darbitex-disperse`)
+
+| Field | Value |
+|---|---|
+| Package / multisig | `0x3b9514c83249434306d69747a6e4eef303e6ac690fb6efc57fb0c23d7cc4d95a` |
+| Threshold | **3/5** (bootstrapped 1/5 → raised 2026-04-19) |
+| Upgrade policy | `compatible` |
+| Module | `darbitex::disperse` |
+| Fee recipient | Treasury `0xdbce8911...` |
+| Fee | 1 APT flat per `disperse_uniform` / `disperse_custom` call |
+
+Owners (swap 0x85 → 0x0047 vs Treasury):
+
+| # | Address |
+|---|---|
+| 1 | `0x0047a3e13465172e10661e20b7b618235e9c7e62a365d315e91cf1ef647321c9` |
+| 2 | `0x13f0c2edebcb9df033875af75669520994ab08423fe86fa77651cebbc5034a65` |
+| 3 | `0xa1189e559d1348be8d55429796fd76bf18001d0a2bd4e9f8b24878adcbd5e84a` |
+| 4 | `0xd2e046159d03cc7b4d0657d642a7c1eb7b3c10f55c4dc52fd62fd09957324150` |
+| 5 | `0x953a05cf1b86e2f0cfa9bc300559cfcf1f441404bfefeb719a400aa529e01f70` |
+
+**Deprecated orphan** — `0x5f79f1b5a0a4e9abd472054ba768a88187cad40a4e78107b731a482d2a55db3e::disperse` was an earlier hot-wallet deploy (2026-04-18). Neutered 2026-04-19 via upgrade `0xcb51f323...04f8`: all entry functions abort `E_DEPRECATED(999)`. Do not call.
 
 ---
 
@@ -135,4 +159,5 @@ completeness; source + audits in their own repos.
 | Token Factory | `0xbaa604864b167f6fb139893ac68bc72c3ab7d57710de5d71531f09e45df00958` |
 | Token Vault V2 | `0x8f4060790bdba617a34d7c55e2332400b4f592cd1037aa9acd0620811155d4eb` |
 | LP Staking | `0xeec9f2361d1ae5e3ce5884523ad5d7bce6948d6ca12496bf0d8b8a6cbebaa050` |
+| Disperse | `0x3b9514c83249434306d69747a6e4eef303e6ac690fb6efc57fb0c23d7cc4d95a` |
 | DARBITEX token | `0x8241d225df6dee465b2898686011c477d5863abccae16630c7145c3165e9c2d` |
