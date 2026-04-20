@@ -69,7 +69,7 @@ Owners:
 | Threshold | **3/5** (bootstrapped 1/5 → raised 2026-04-20) |
 | Upgrade policy | `compatible` |
 | Modules | `darbitex_twamm::bridge` (friend-only MEV composer), `darbitex_twamm::executor` (keeper-gated virtual order runner) |
-| Version | `v0.1.1` (v0.1.0 published + v0.1.1 thala::swap param fix applied pre-smoke) |
+| Version | `v0.2.0` (v0.1.0 publish → v0.1.1 thala::swap fix → v0.2.0 oracle-refresh ergonomics) |
 | Audit | R5.1 — 7 independent green: Opus self, Gemini 3 Flash, Kimi K2.5, Grok (xAI), Qwen, OpenHands, DeepSeek. See `Audit-R5-Bundle.md`. |
 | Oracle | `EmaOracle` initialized from Darbitex pool `0x3837eff0...` (APT/USDC, reserves 361M/3.55M octas) |
 | Keeper whitelist | `0x0047a3e13465172e10661e20b7b618235e9c7e62a365d315e91cf1ef647321c9` |

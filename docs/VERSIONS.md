@@ -47,3 +47,22 @@ Multisig: 3/5 (bootstrapped 1/5 → raised 2026-04-20)
   - Line 104 (arb leg): pass `0` as arg 5 (economic guard is final `gross_out >= auto_borrow_amount` repay check)
 - **Re-smoke:** version `4942678952` — 0.00208 APT → 0.001944 USDC via Thala 5bps pool `0xa928...`, `arb_executed: false` (oracle matches Darbitex pool, no divergence — expected)
 - **Lesson:** Smoke test with real tokens is the last line of defense against cross-package ABI mismatches. Ref `memory/feedback_smoke_test.md`.
+
+## v0.2.0 — Oracle refresh ergonomics (2026-04-20, same day)
+
+- **Propose tx:** version `4943564364`, hash `0x...` at seq 9 of multisig
+- **Execute tx:** version `4943607836`, hash `0x63c68437ca0bd683169e0f1a14e388390c819c751a27d789a0061de3a3300502`
+- **Changes:**
+  - Auto-refresh stale oracle inside `execute_virtual_order` — reads `darbitex_arb_pool` reserves (same pool used for MEV calc) when oracle age > 300s. Keeper whitelist gates trigger.
+  - `MIN_SWAP_FOR_EMA` threshold removed — small-chunk TWAMM now blends oracle via every successful tick. `ratio_ok` 5× + 10% smoothing + keeper whitelist remain as manipulation bounds.
+  - New events: `OrderCreated`, `OracleRefreshed`
+  - `cancel_order` idempotent guard (`remaining > 0`)
+  - `E_ORDER_EXPIRED` renamed `E_TIME_NOT_ADVANCED` (value 2 preserved)
+  - `E_STALE_ORACLE` (value 5) removed — unreachable after auto-refresh
+- **Design iteration note:** earlier draft exposed `refresh_oracle_from_pool` as permissionless standalone entry. User flagged wrong-pair-pool DDoS vector (attacker refresh every 5 min @ 0.005 APT = ~1.4 APT/day grief). Revised to fold refresh into `execute_virtual_order` where keeper whitelist is the trust gate and pool comes from the keeper's own execute call. No new attacker surface.
+- **Audit:** self-audit by Claude Opus 4.7 (GREEN). External audit round skipped for this scope (~30 lines, additive + bounded, storage unchanged). Policy revisit if larger features bundled.
+- **PoC smoke (same session):**
+  - Order: 5,000 octas APT, 300s duration
+  - Tick #1 (version `4943641238`): 1,700 octas APT → 15 USDC units, `OracleRefreshed` fired (oracle had been stale 97 min). Gas 6,037 units.
+  - Tick #2 (version `4943689299`): 3,300 octas APT → 30 USDC units, oracle fresh from tick #1 blend — no refresh. Gas 482 units.
+  - Full order completed (remaining = 0). Small-chunk TWAMM verified viable.
