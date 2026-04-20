@@ -24,8 +24,8 @@ module darbitex_twamm::executor {
 
     // ===== Constants =====
 
-    const MAX_ORACLE_AGE: u64 = 300; // 5 minutes
-    const MAX_EMA_DEVIATION: u128 = 5;
+    // MAX_ORACLE_AGE removed v0.5.0 — oracle auto-overwrites per tick, no stale gate.
+    // MAX_EMA_DEVIATION removed v0.5.0 — no blend, no ratio_ok check.
     const MIN_OUTPUT_PCT: u64 = 95;
 
     // ===== State =====
@@ -315,30 +315,11 @@ module darbitex_twamm::executor {
 
         let oracle = borrow_global_mut<EmaOracle>(@darbitex_twamm);
 
-        // v0.2.0 auto-refresh: if oracle stale, read darbitex_arb_pool (same
-        // pool used below for MEV calc + blend) and reset. Keeper whitelist
-        // at the top of this function is the trust gate — no new attacker
-        // surface, no 3/5 multisig coordination needed for stale recovery.
-        if (now - oracle.last_timestamp > MAX_ORACLE_AGE) {
-            let (res_a, res_b) = pool::reserves(darbitex_arb_pool);
-            let (meta_a, _) = pool::pool_tokens(darbitex_arb_pool);
-            let is_in_a = (object::object_address(&order.token_in) == object::object_address(&meta_a));
-            let (r_in, r_out) = if (is_in_a) { (res_a, res_b) } else { (res_b, res_a) };
-            assert!(r_in > 0 && r_out > 0, E_AMOUNT_TOO_SMALL);
-            oracle.reserve_in = (r_in as u128);
-            oracle.reserve_out = (r_out as u128);
-            oracle.last_timestamp = now;
-            event::emit(OracleRefreshed {
-                caller: keeper_addr,
-                darbitex_pool: darbitex_arb_pool,
-                reserve_in: (r_in as u128),
-                reserve_out: (r_out as u128),
-                timestamp: now,
-            });
-        };
-
         let order_signer = object::generate_signer_for_extending(&order.extend_ref);
 
+        // User's min_out protection based on current oracle (last TWAMM price).
+        // Oracle is pure Darbitex-state tracker — v0.5.0 onward auto-overwrites
+        // every tick at end (after bridge) to post-trade pool reserves.
         let min_implied_out = (
             (amount_to_swap as u128) * oracle.reserve_out / oracle.reserve_in
         );
@@ -346,7 +327,7 @@ module darbitex_twamm::executor {
 
         let bal_before = primary_fungible_store::balance(order_address, order.token_out);
 
-        // Call Bridge with TWAMM Oracle
+        // v0.5.0 bridge signature: no oracle reserves (Thala-direct MEV comparison)
         bridge::omni_swap_thala_twamm(
             &order_signer,
             order.token_in,
@@ -356,8 +337,6 @@ module darbitex_twamm::executor {
             thala_pool,
             darbitex_arb_pool,
             order_address,
-            oracle.reserve_in,
-            oracle.reserve_out,
             now + 60,
         );
 
@@ -366,25 +345,25 @@ module darbitex_twamm::executor {
 
         assert!(actual_amount_out >= min_out, E_INSUFFICIENT_OUT);
 
-        // MIN_SWAP_FOR_EMA removed in v0.2.0 — `ratio_ok` 5× gate + 10% smoothing + keeper whitelist provide sufficient manipulation bound. Removing the floor lets small-chunk TWAMM orders (0.00001 APT/tick scale) keep oracle fresh organically.
-        if (actual_amount_out > 0) {
-            let spot_cross = (actual_amount_out as u256) * (oracle.reserve_in as u256);
-            let ema_cross = (oracle.reserve_out as u256) * (amount_to_swap as u256);
-
-            let ratio_ok = spot_cross <= ema_cross * (MAX_EMA_DEVIATION as u256)
-                        && spot_cross * (MAX_EMA_DEVIATION as u256) >= ema_cross;
-
-            if (ratio_ok) {
-                let (res_a, res_b) = pool::reserves(darbitex_arb_pool);
-                let (meta_a, _) = pool::pool_tokens(darbitex_arb_pool);
-                let is_in_a = (object::object_address(&order.token_in) == object::object_address(&meta_a));
-                let (pool_r_in, pool_r_out) = if (is_in_a) { (res_a, res_b) } else { (res_b, res_a) };
-
-                oracle.reserve_in = ((oracle.reserve_in * 9 + (pool_r_in as u128)) / 10);
-                oracle.reserve_out = ((oracle.reserve_out * 9 + (pool_r_out as u128)) / 10);
-                oracle.last_timestamp = now;
-            };
-        };
+        // v0.5.0 auto-overwrite: oracle now tracks "state setelah TWAMM terakhir".
+        // Every successful tick unconditionally SETs oracle to post-trade Darbitex
+        // pool reserves. No EMA blend, no stale gate, no ratio_ok conditional —
+        // oracle is always current. Oracle-as-service consumers get realtime
+        // Darbitex state; user min_out gate uses this for next-tick slippage.
+        let (res_a, res_b) = pool::reserves(darbitex_arb_pool);
+        let (meta_a, _) = pool::pool_tokens(darbitex_arb_pool);
+        let is_in_a = (object::object_address(&order.token_in) == object::object_address(&meta_a));
+        let (pool_r_in, pool_r_out) = if (is_in_a) { (res_a, res_b) } else { (res_b, res_a) };
+        oracle.reserve_in = (pool_r_in as u128);
+        oracle.reserve_out = (pool_r_out as u128);
+        oracle.last_timestamp = now;
+        event::emit(OracleRefreshed {
+            caller: keeper_addr,
+            darbitex_pool: darbitex_arb_pool,
+            reserve_in: oracle.reserve_in,
+            reserve_out: oracle.reserve_out,
+            timestamp: now,
+        });
 
         event::emit(VirtualOrderExecuted {
             owner: order.owner,

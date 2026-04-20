@@ -84,3 +84,29 @@ Multisig: 3/5 (bootstrapped 1/5 → raised 2026-04-20)
   - Oracle post-blend: 361,852,019 / 3,549,722 (= 0.9 × old + 0.1 × pool, math verified)
 - **Known limitation (V0.4 target):** `calculate_optimal_borrow` formula is asymmetric — MEV only triggers when P_darb > P_oracle (user USDC→APT direction). User APT→USDC trades (drop P_darb) don't trigger arb. Symmetric arb handling = v0.4 candidate.
 - **Audit:** self-audit only. Single-line functional change + comments. Additive revenue unlock. Storage unchanged. External audit deferred to V0.4 (symmetric arb) bundle.
+
+## v0.5.0 — Thala-direct arb (first successful MEV execution)
+
+- **Execute tx:** version `4945051700` (upgrade executed 2026-04-20, seq 12)
+- **Changes:**
+  - `bridge.move::calculate_optimal_borrow` rewritten — compares Darbitex (post-DEX) directly against Thala pool reserves. No oracle dependency for MEV direction.
+  - Classic 2-AMM constant-product optimal arb formula: `Δy* = (√(k_D × k_T) − boundary) / (dx + tx)`. Auto-switch Case A (P_darb > P_thala, Thala→Darbitex) or Case B (P_darb < P_thala, Darbitex→Thala).
+  - New constant `MIN_ARB_AMOUNT = 1000` USDC units = $0.001 economic floor. Skip MEV if computed borrow below this.
+  - Pair-match guard — Thala pool must contain order's `token_in`.
+  - u256-space cap before u64 cast (hardening, no silent truncation for large pools).
+  - `omni_swap_thala_twamm` signature cleaned — oracle params removed.
+  - `ThalaSwapV2` stub extended with `pool_balances` + `pool_assets_metadata` view declarations.
+- **Oracle behavior simplified (`executor::execute_virtual_order`):**
+  - Removed v0.2.0 auto-refresh-when-stale block
+  - Removed v0.4.0 `ratio_ok` 5× gate + 10% EMA blend
+  - **Added unconditional overwrite** — every successful tick SETs oracle to post-trade Darbitex pool reserves
+  - `MAX_ORACLE_AGE` + `MAX_EMA_DEVIATION` constants removed (unused)
+  - Oracle now pure "last Darbitex state via TWAMM", suitable as realtime oracle-as-service feed
+- **Design principle locked:**
+  - Oracle = INTERNAL (Darbitex) — monetizable as oracle feed
+  - Arb target = EXTERNAL (Thala) — direct reference for MEV direction/sizing
+  - TWAMM DEX leg on Darbitex captures fee + calibrates oracle
+- **Smoke tick 1 (version `4945074942`):** Darbitex pre-trade 0.0098 USDC/APT, Thala 0.00942. Case A triggered. Flash 67,563 USDC via Aave. Profit **1,376 USDC units** (beneficiary 1,239 + treasury 137). Post-arb oracle moved to (369,078,420 / 3,480,222) = 0.00943, arb closed 95% of gap.
+- **Smoke tick 2 (version `4945111463`):** tick fired past `end_time` (35s over) — took remaining 3,617 octas. Near-equilibrium state. Case A still triggered with tiny optimal; gross_out = auto_borrow exactly → break-even (profit=0, no revert). Oracle finalized (369,227,325 / 3,478,819) = 0.00943 ≈ Thala 0.00942. **Robustness signal**: even at $7 Darbitex TVL, formula didn't revert on slippage.
+- **Audit:** self-audit GREEN, 1 hardening fix applied (u256-space cap). External audit skipped — scope contained to well-understood arb formula + single-venue extension.
+- **V0.6 target noted:** tighten buffer 98% → 99% (Candidate L in memory).
