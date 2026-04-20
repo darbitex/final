@@ -12,10 +12,10 @@ module darbitex_twamm::executor {
 
     // ===== Errors =====
     const E_NOT_AUTHORIZED: u64 = 1;
-    const E_ORDER_EXPIRED: u64 = 2;
+    const E_TIME_NOT_ADVANCED: u64 = 2; // Renamed from E_ORDER_EXPIRED (value preserved for indexer compat)
     const E_NO_ORDER: u64 = 3;
     const E_NOT_ADMIN: u64 = 4;
-    const E_STALE_ORACLE: u64 = 5;
+    // const E_STALE_ORACLE: u64 = 5; // Removed v0.2.0 — auto-refresh in execute_virtual_order replaces stale abort
     const E_AMOUNT_TOO_SMALL: u64 = 6;
     const E_INSUFFICIENT_OUT: u64 = 7;
     const E_ALREADY_INITIALIZED: u64 = 8;
@@ -25,7 +25,6 @@ module darbitex_twamm::executor {
     // ===== Constants =====
 
     const MAX_ORACLE_AGE: u64 = 300; // 5 minutes
-    const MIN_SWAP_FOR_EMA: u64 = 1_000_000;
     const MAX_EMA_DEVIATION: u128 = 5;
     const MIN_OUTPUT_PCT: u64 = 95;
 
@@ -77,6 +76,28 @@ module darbitex_twamm::executor {
         order_address: address,
         token_in_refunded: u64,
         token_out_delivered: u64,
+        timestamp: u64,
+    }
+
+    #[event]
+    struct OrderCreated has drop, store {
+        owner: address,
+        order_address: address,
+        token_in: address,
+        token_out: address,
+        amount_in: u64,
+        duration_seconds: u64,
+        start_time: u64,
+        end_time: u64,
+        timestamp: u64,
+    }
+
+    #[event]
+    struct OracleRefreshed has drop, store {
+        caller: address,
+        darbitex_pool: address,
+        reserve_in: u128,
+        reserve_out: u128,
         timestamp: u64,
     }
 
@@ -137,6 +158,12 @@ module darbitex_twamm::executor {
         event::emit(AdminActionExecuted { action_type: 3, actor: signer::address_of(admin), target: @darbitex_twamm, timestamp: timestamp::now_seconds() });
     }
 
+    // Note: stale oracle is auto-recovered inside execute_virtual_order
+    // (see v0.2.0 auto-refresh block). No standalone permissionless entry
+    // because wrong-pair pool supplied by arbitrary caller would be a DDoS
+    // vector. Keeper whitelist + keeper-supplied darbitex_arb_pool (same
+    // one used for MEV calc) is the trust boundary.
+
     public entry fun init_ema_from_pool(
         account: &signer,
         darbitex_pool: address,
@@ -187,6 +214,7 @@ module darbitex_twamm::executor {
         primary_fungible_store::deposit(signer::address_of(&order_signer), fa_in);
 
         let now = timestamp::now_seconds();
+        let order_address = signer::address_of(&order_signer);
         move_to(&order_signer, LongTermOrder {
             token_in,
             token_out,
@@ -197,6 +225,17 @@ module darbitex_twamm::executor {
             last_executed_time: now,
             owner: user_addr,
             extend_ref,
+        });
+        event::emit(OrderCreated {
+            owner: user_addr,
+            order_address,
+            token_in: object::object_address(&token_in),
+            token_out: object::object_address(&token_out),
+            amount_in,
+            duration_seconds,
+            start_time: now,
+            end_time: now + duration_seconds,
+            timestamp: now,
         });
     }
 
@@ -211,6 +250,8 @@ module darbitex_twamm::executor {
     ) acquires LongTermOrder {
         let order = borrow_global_mut<LongTermOrder>(order_address);
         assert!(signer::address_of(user) == order.owner, E_NOT_OWNER);
+        // Idempotent guard — reject cancel on already-cancelled/completed order
+        assert!(order.remaining_amount_in > 0, E_NO_ORDER);
 
         let order_signer = object::generate_signer_for_extending(&order.extend_ref);
 
@@ -250,7 +291,7 @@ module darbitex_twamm::executor {
         let order = borrow_global_mut<LongTermOrder>(order_address);
         let now = timestamp::now_seconds();
 
-        assert!(now > order.last_executed_time, E_ORDER_EXPIRED);
+        assert!(now > order.last_executed_time, E_TIME_NOT_ADVANCED);
         assert!(order.remaining_amount_in > 0, E_NO_ORDER);
 
         let time_elapsed = now - order.last_executed_time;
@@ -273,7 +314,28 @@ module darbitex_twamm::executor {
         order.last_executed_time = now;
 
         let oracle = borrow_global_mut<EmaOracle>(@darbitex_twamm);
-        assert!(now - oracle.last_timestamp <= MAX_ORACLE_AGE, E_STALE_ORACLE);
+
+        // v0.2.0 auto-refresh: if oracle stale, read darbitex_arb_pool (same
+        // pool used below for MEV calc + blend) and reset. Keeper whitelist
+        // at the top of this function is the trust gate — no new attacker
+        // surface, no 3/5 multisig coordination needed for stale recovery.
+        if (now - oracle.last_timestamp > MAX_ORACLE_AGE) {
+            let (res_a, res_b) = pool::reserves(darbitex_arb_pool);
+            let (meta_a, _) = pool::pool_tokens(darbitex_arb_pool);
+            let is_in_a = (object::object_address(&order.token_in) == object::object_address(&meta_a));
+            let (r_in, r_out) = if (is_in_a) { (res_a, res_b) } else { (res_b, res_a) };
+            assert!(r_in > 0 && r_out > 0, E_AMOUNT_TOO_SMALL);
+            oracle.reserve_in = (r_in as u128);
+            oracle.reserve_out = (r_out as u128);
+            oracle.last_timestamp = now;
+            event::emit(OracleRefreshed {
+                caller: keeper_addr,
+                darbitex_pool: darbitex_arb_pool,
+                reserve_in: (r_in as u128),
+                reserve_out: (r_out as u128),
+                timestamp: now,
+            });
+        };
 
         let order_signer = object::generate_signer_for_extending(&order.extend_ref);
 
@@ -304,7 +366,8 @@ module darbitex_twamm::executor {
 
         assert!(actual_amount_out >= min_out, E_INSUFFICIENT_OUT);
 
-        if (amount_to_swap >= MIN_SWAP_FOR_EMA && actual_amount_out > 0) {
+        // MIN_SWAP_FOR_EMA removed in v0.2.0 — `ratio_ok` 5× gate + 10% smoothing + keeper whitelist provide sufficient manipulation bound. Removing the floor lets small-chunk TWAMM orders (0.00001 APT/tick scale) keep oracle fresh organically.
+        if (actual_amount_out > 0) {
             let spot_cross = (actual_amount_out as u256) * (oracle.reserve_in as u256);
             let ema_cross = (oracle.reserve_out as u256) * (amount_to_swap as u256);
 
