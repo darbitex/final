@@ -162,12 +162,14 @@ The `omni_swap` prefix in the remaining function name is the rhetorical tell: "o
 - Flashbot satellite already proves the multi-venue pattern works on Aptos (`run_arb_hyperion` + `run_arb_cellana` both live in production)
 - Single-venue TWAMM leaves liquidity on the table for APT pairs that Hyperion CLMM or Cellana stable/volatile serve better than Thala
 
-**How**:
+**How** (constrained by north star — see `feedback_autonomous_onchain_north_star.md`):
 - Add `bridge::omni_swap_hyperion_twamm` + `bridge::omni_swap_cellana_twamm` (friend-only), matching the pattern already deployed on flashbot (`run_arb_hyperion`, `run_arb_cellana`)
-- Executor dispatches on venue — either via `venue: u8` param to `execute_virtual_order`, or three parallel entry functions
+- Dispatcher logic lives **on-chain** in `bridge.move`: iterate N venues, compute `calculate_optimal_borrow` per venue, pick the one with highest expected profit, execute. Revert-on-loss means speculative quoting is cost-safe.
+- **DO NOT** accept a `venue: u8` hint from keeper or off-chain — that violates north star. Keeper's only job is to trigger; contract decides venue.
 - Each new bridge fn handles venue-specific signatures:
   - Hyperion: `a_to_b: bool` + `Object<LiquidityPoolV3>`
   - Cellana: `is_stable: bool` + no pool object (router auto-resolves by pair)
+- Venue pool addresses either hardcoded as constants (simplest) OR stored in a `VenueRegistry` resource admin-gated (more flexible). No runtime off-chain input.
 
 **Trigger to revisit (always-on, not conditional)**:
 - This is the **first** V2 upgrade target when the bundling strategy below executes. Do not gate on "observed demand" — the capability has always been intended.

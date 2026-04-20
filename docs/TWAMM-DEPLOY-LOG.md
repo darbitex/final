@@ -5,6 +5,32 @@ before touching the TWAMM satellite. Target audience: any future operator
 (human or AI — Gemini Antigravity, Claude Code, OpenHands, etc.) who needs to
 pick up TWAMM context without re-reading every audit bundle.
 
+## 0. NORTH STAR — read this first
+
+**Darbitex arb engine is fully autonomous on-chain.** All economic and
+routing decisions must live in Move code. Off-chain infrastructure exists
+only to (a) trigger execution and (b) enable third-party integration.
+
+**TWAMM is not the goal — it is a trigger mechanism (bait)**. The goal is
+an autonomous on-chain **omni-router / arb engine** that:
+- Auto-sizes borrow (already done — `bridge::calculate_optimal_borrow`)
+- Auto-routes across all available venues (V2 target — see §7)
+- Executes atomically via flash loan (Aave 0-fee, zero capital risk)
+- **Reverts on loss** — the cost of a wrong guess is only gas. This
+  revert-on-loss property is what makes on-chain quote comparison across
+  venues practical.
+
+**Allowed off-chain**: trigger bots (keeper polling), third-party UIs and
+integrators, observability/indexers.
+
+**Forbidden off-chain**: passing pre-computed routes, venue hints, optimal
+sizes, or any other decision that the contract trusts blindly. If the
+off-chain layer disappeared, the contract must still execute correctly
+against a naive `aptos move run`. This is the litmus test.
+
+Violating this leads to "a centralized bot in Move clothing" — rejected.
+For the full rationale see `memory/feedback_autonomous_onchain_north_star.md`.
+
 ---
 
 ## 1. Entry state (pre-R5)
