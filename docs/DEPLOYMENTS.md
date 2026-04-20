@@ -59,7 +59,47 @@ Owners:
 | Publisher | Hot wallet (same address) — **single-sig POC** |
 | Threshold | 1/1 |
 | Upgrade policy | `compatible` |
-| Module | `darbitex_flashbot::flashbot` |
+| Modules | `darbitex_flashbot::flashbot` (user-facing `run_arb` / `run_arb_hyperion` / `run_arb_cellana`) |
+
+### TWAMM (`twamm/`) — LIVE
+
+| Field | Value |
+|---|---|
+| Package / multisig | `0x9df06f93369effe15ab626044bbbcb03e6bf198af909ac4c133719e637771cf4` |
+| Threshold | **3/5** (bootstrapped 1/5 → raised 2026-04-20) |
+| Upgrade policy | `compatible` |
+| Modules | `darbitex_twamm::bridge` (friend-only MEV composer), `darbitex_twamm::executor` (keeper-gated virtual order runner) |
+| Version | `v0.1.1` (v0.1.0 published + v0.1.1 thala::swap param fix applied pre-smoke) |
+| Audit | R5.1 — 7 independent green: Opus self, Gemini 3 Flash, Kimi K2.5, Grok (xAI), Qwen, OpenHands, DeepSeek. See `Audit-R5-Bundle.md`. |
+| Oracle | `EmaOracle` initialized from Darbitex pool `0x3837eff0...` (APT/USDC, reserves 361M/3.55M octas) |
+| Keeper whitelist | `0x0047a3e13465172e10661e20b7b618235e9c7e62a365d315e91cf1ef647321c9` |
+| External deps (mainnet) | Aave `0x39ddcd9e...` (flash, 0 fee verified), Thala V2 `0x7730cd28...` (APT/USDC 5bps pool `0xa928...`) |
+
+Owners (Pattern A — same as Final core):
+
+| # | Address |
+|---|---|
+| 1 | `0x0047a3e13465172e10661e20b7b618235e9c7e62a365d315e91cf1ef647321c9` (hot, profile `final`, proposer) |
+| 2 | `0x13f0c2edebcb9df033875af75669520994ab08423fe86fa77651cebbc5034a65` |
+| 3 | `0xf6e1d1fdc2de9d755f164bdbf6153200ed25815c59a700ba30fb6adf8eb1bda1` |
+| 4 | `0xc257b12ef33cc0d221be8eecfe92c12fda8d886af8229b9bc4d59a518fa0b093` |
+| 5 | `0xa1189e559d1348be8d55429796fd76bf18001d0a2bd4e9f8b24878adcbd5e84a` |
+
+Key transactions:
+- Multisig create: `0xc65348bfe69da5b32f5bfaf6dccb6de457c17e2b583e693a923ca6ff672e9888`
+- Package publish (v0.1.0): version `4942424268`, tx `0x3489031ef9fb73c9de660269a1c3615746c5068ce5fffd162f78d6453e82aff5`
+- Package upgrade (v0.1.1, thala::swap param fix): version `4942656615`
+- `init_ema_from_pool`: version `4942437741`
+- `add_keeper(0x0047)`: version `4942441312`
+- First (broken) smoke: tx `0x2ae17293049223c6495edda7820d29676b39a772e7811e81534a18eeeb20de8d` — aborted `E_MIN_OUT` due to v0.1.0 bridge bug
+- Final (green) smoke: version `4942678952` — 0.00208 APT → 0.001944 USDC via Thala 5bps, `arb_executed: false` (expected — no price divergence)
+- Threshold raise to 3/5: immediately after smoke
+
+**Architecture note**: `bridge.move` lives in the **twamm package**, not flashbot. Aptos Move requires `friend` declarations to reference modules at the same address. Since `bridge::omni_swap_thala_twamm` is `public(friend)` restricted to `executor`, the two modules must be colocated. The standalone `flashbot::run_arb*` entry points are unrelated user-facing flash-arb primitives and remain in the flashbot package.
+
+**V1 scope**: Thala-only venue. This is a regression-from-R1 — R1 had three venues (`omni_swap_thala_twamm`, `omni_swap_hyperion_twamm`, `omni_swap_cellana_twamm`), R2 audit deleted the Hyperion/Cellana variants as "dead code" instead of adding the executor-side dispatcher. The `omni_swap` prefix in the remaining function name is the rhetorical tell.
+
+**V2 PRIMARY TARGET**: restore multi-venue dispatcher (Candidate J in memory). This is not an optional future feature — it is the first V2 upgrade. Follow-up V2 candidates: `OrderCreated` event, per-pair `MAX_EMA_DEVIATION`, `force_update_oracle` deviation bound, `cancel_order` idempotent guard. Full candidate list + bundling strategy at `/home/rera/.claude/projects/-home-rera/memory/darbitex_twamm_v2_candidates.md`.
 
 ### LP Locker (`lp-locker/`)
 

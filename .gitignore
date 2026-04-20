@@ -3,6 +3,9 @@ build/
 
 # Aptos CLI profile with private key — NEVER commit
 .aptos/
+# Also catch symlinks to .aptos at any depth (e.g. twamm/.aptos → ../.aptos)
+**/.aptos
+**/.aptos/
 
 # Editor / OS
 .DS_Store

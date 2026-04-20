@@ -1,0 +1,14 @@
+[package]
+name = "DarbitexTWAMM"
+version = "0.1.1"
+upgrade_policy = "compatible"
+
+[addresses]
+darbitex_twamm = "_"
+darbitex = "0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
+DarbitexFinal = { local = ".." }
+DarbitexThala = { local = "../flashbot/deps/ThalaStub" }
+AavePool = { local = "../flashbot/deps/AaveStub" }
