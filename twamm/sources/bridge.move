@@ -83,10 +83,15 @@ module darbitex_twamm::bridge {
         assert!(object::object_address(&token_in) != object::object_address(&token_out), E_SAME_TOKEN);
         let order_addr = signer::address_of(order_signer);
 
-        // 1. External Leg (Thala)
+        // 1. Internal DEX Leg (Darbitex) — v0.3.0
+        // User TWAMM chunks execute on Darbitex pool (internal price-setter).
+        // This: (a) generates AMM fee revenue to LP, (b) moves our pool so
+        // oracle EMA can actually diverge via 10% blend lag, (c) validates
+        // oracle-as-a-service activity. Thala pool arg reserved for MEV leg
+        // (external arb target).
         let fa_in = primary_fungible_store::withdraw(order_signer, token_in, amount_in);
         let thala_pool_obj = object::address_to_object<ThalaPool>(thala_pool);
-        let fa_out = thala::swap(order_signer, thala_pool_obj, fa_in, token_out, min_amount_out);
+        let fa_out = pool::swap(darbitex_arb_pool, order_addr, fa_in, min_amount_out);
 
         let amount_out = fungible_asset::amount(&fa_out);
         assert!(amount_out >= min_amount_out, E_INSUFFICIENT_OUT);

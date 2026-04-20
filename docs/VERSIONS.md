@@ -66,3 +66,21 @@ Multisig: 3/5 (bootstrapped 1/5 → raised 2026-04-20)
   - Tick #1 (version `4943641238`): 1,700 octas APT → 15 USDC units, `OracleRefreshed` fired (oracle had been stale 97 min). Gas 6,037 units.
   - Tick #2 (version `4943689299`): 3,300 octas APT → 30 USDC units, oracle fresh from tick #1 blend — no refresh. Gas 482 units.
   - Full order completed (remaining = 0). Small-chunk TWAMM verified viable.
+
+## v0.3.0 — DEX leg to Darbitex (2026-04-20, same day)
+
+- **Execute tx:** version `4944202224`
+- **Changes (`bridge.move`):** single-line functional flip at `:89`:
+  ```diff
+  - let fa_out = thala::swap(order_signer, thala_pool_obj, fa_in, token_out, min_amount_out);
+  + let fa_out = pool::swap(darbitex_arb_pool, order_addr, fa_in, min_amount_out);
+  ```
+- **Why:** v0.2.0 smoke revealed arb_executed=false on every tick. Root cause: TWAMM DEX leg ran on Thala (external), so Darbitex pool never moved from our TWAMM → oracle tautologically = pool → MEV trigger condition never met. Design intent per owner: oracle = INTERNAL (Darbitex), arb target = EXTERNAL (Thala). v0.3.0 flips DEX leg to Darbitex so user trades actually calibrate our oracle, generate LP fee, and enable MEV divergence windows.
+- **Revenue streams unlocked:** (1) AMM LP fee from TWAMM chunks, (2) MEV arb against external venues, (3) oracle-as-a-service validated by real trading activity.
+- **Smoke verified (same session):**
+  - Darbitex pool pre-trade: 361,851,826 APT + 3,549,724 USDC
+  - Tick (version `4944236830`): 1,933 octas APT → 18 USDC units via Darbitex pool::swap. Gas 5,917 units. Event `OracleRefreshed` fired (auto-refresh from stale).
+  - Darbitex pool post-trade: 361,853,759 APT + 3,549,706 USDC (+1,933 / -18 — matches chunk)
+  - Oracle post-blend: 361,852,019 / 3,549,722 (= 0.9 × old + 0.1 × pool, math verified)
+- **Known limitation (V0.4 target):** `calculate_optimal_borrow` formula is asymmetric — MEV only triggers when P_darb > P_oracle (user USDC→APT direction). User APT→USDC trades (drop P_darb) don't trigger arb. Symmetric arb handling = v0.4 candidate.
+- **Audit:** self-audit only. Single-line functional change + comments. Additive revenue unlock. Storage unchanged. External audit deferred to V0.4 (symmetric arb) bundle.
