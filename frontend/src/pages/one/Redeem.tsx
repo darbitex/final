@@ -2,9 +2,9 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ONE_PACKAGE, ONE_PARAMS, TOKENS } from "../../config";
 import { useFaBalance } from "../../chain/balance";
-import { onePrice8dec, oneReserveBalance } from "../../chain/one";
+import { onePrice8dec, oneReserveBalance, oneTroveHealth } from "../../chain/one";
 import { decodeOneError } from "../../chain/oneErrors";
-import { formatApt, formatAptUsd, formatOne } from "../../chain/oneFormat";
+import { formatApt, formatAptUsd, formatCrBps, formatOne } from "../../chain/oneFormat";
 import { fetchAptUsdVaa } from "../../chain/pyth";
 import { createRpcPool, toRaw } from "../../chain/rpc-pool";
 import { useAddress } from "../../wallet/useConnect";
@@ -12,6 +12,64 @@ import { useAddress } from "../../wallet/useConnect";
 const rpc = createRpcPool("one-redeem");
 
 type Mode = "target" | "reserve";
+
+type TroveCandidate = {
+  address: string;
+  collateral: bigint;
+  debt: bigint;
+  crBps: bigint;
+};
+
+// Mirror of the discovery scanner in Liquidate.tsx, minus the under-water
+// filter — redeem has no health gate, so every active trove (debt > 0) is
+// a valid target. Sorted by CR ascending because redeeming against the
+// weakest trove first is the most peg-efficient call (same logic Liquity
+// V1's sorted list enforces, but here it's caller-specified).
+async function discoverActiveTroves(): Promise<TroveCandidate[]> {
+  type UT = { sender: string; entry_function_id_str: string } | null;
+  type Row = { user_transaction: UT };
+  type Q = { account_transactions: Row[] };
+  const openFns = new Set([
+    `${ONE_PACKAGE}::ONE::open_trove`,
+    `${ONE_PACKAGE}::ONE::open_trove_pyth`,
+  ]);
+  const query = {
+    query: `query OpenTroveTxs($pkg: String!) {
+      account_transactions(
+        where: { account_address: { _eq: $pkg } }
+        limit: 1000
+        order_by: { transaction_version: desc }
+      ) {
+        user_transaction {
+          sender
+          entry_function_id_str
+        }
+      }
+    }`,
+    variables: { pkg: ONE_PACKAGE },
+  };
+  const res = await rpc.primary.queryIndexer<Q>({ query });
+  const seen = new Set<string>();
+  for (const row of res.account_transactions ?? []) {
+    const ut = row.user_transaction;
+    if (!ut) continue;
+    if (!openFns.has(ut.entry_function_id_str)) continue;
+    if (ut.sender) seen.add(ut.sender);
+  }
+  const results = await Promise.all(
+    Array.from(seen).map(async (a) => {
+      try {
+        const h = await oneTroveHealth(rpc, a);
+        return { address: a, ...h };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return results
+    .filter((r): r is TroveCandidate => r !== null && r.debt > 0n)
+    .sort((a, b) => (a.crBps > b.crBps ? 1 : a.crBps < b.crBps ? -1 : 0));
+}
 
 export function OneRedeem() {
   const { signAndSubmitTransaction } = useWallet();
@@ -34,6 +92,28 @@ export function OneRedeem() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
+
+  const [candidates, setCandidates] = useState<TroveCandidate[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  const refreshCandidates = useCallback(async () => {
+    setDiscovering(true);
+    setDiscoverError(null);
+    try {
+      setCandidates(await discoverActiveTroves());
+    } catch (e) {
+      setDiscoverError(decodeOneError(e));
+    } finally {
+      setDiscovering(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode === "target" && candidates.length === 0 && !discovering) {
+      refreshCandidates();
+    }
+  }, [mode, candidates.length, discovering, refreshCandidates]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,13 +251,122 @@ export function OneRedeem() {
       </div>
 
       {mode === "target" && (
-        <div className="err" style={{ marginBottom: 12 }}>
-          <strong>Warning:</strong> targeted redemption pulls collateral from the
-          specified trove owner. R4-M-01 disclosure — cached Pyth price (≤
-          {ONE_PARAMS.STALENESS_SECS}s stale) can let alert callers extract surplus
-          when APT moves &gt; 1% in-window. Refresh the oracle immediately before
-          submit.
-        </div>
+        <>
+          <div className="err" style={{ marginBottom: 12 }}>
+            <strong>Warning:</strong> targeted redemption pulls collateral from the
+            specified trove owner. R4-M-01 disclosure — cached Pyth price (≤
+            {ONE_PARAMS.STALENESS_SECS}s stale) can let alert callers extract surplus
+            when APT moves &gt; 1% in-window. Refresh the oracle immediately before
+            submit.
+          </div>
+
+          <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <h2 className="section-title" style={{ margin: 0 }}>
+                Active troves
+              </h2>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={refreshCandidates}
+                disabled={discovering}
+              >
+                {discovering ? "Scanning…" : "Refresh"}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "#777", marginBottom: 8 }}>
+              Sorted by CR (lowest first). Redeeming against the weakest trove is
+              the most peg-efficient call. Discovered via{" "}
+              <code>account_transactions</code> → <code>open_trove*</code> senders.
+            </div>
+
+            {discoverError && <div className="err">{discoverError}</div>}
+            {!discovering && candidates.length === 0 && !discoverError && (
+              <div className="hint">No active troves found.</div>
+            )}
+            {discovering && candidates.length === 0 && (
+              <div className="hint">Scanning open-trove txns…</div>
+            )}
+
+            {candidates.length > 0 && (
+              <div
+                style={{
+                  maxHeight: 260,
+                  overflowY: "auto",
+                  border: "1px solid #1a1a1a",
+                  borderRadius: 6,
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                    gap: 6,
+                    padding: "6px 10px",
+                    fontSize: 11,
+                    color: "#666",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    borderBottom: "1px solid #1a1a1a",
+                  }}
+                >
+                  <span>Trove owner</span>
+                  <span>CR</span>
+                  <span>Debt (ONE)</span>
+                  <span>Coll (APT)</span>
+                </div>
+                {candidates.map((t) => {
+                  const isSelected = target.toLowerCase() === t.address.toLowerCase();
+                  const riskColor =
+                    t.crBps < BigInt(ONE_PARAMS.LIQ_THRESHOLD_BPS)
+                      ? "#ff6b6b"
+                      : t.crBps < BigInt(ONE_PARAMS.MCR_BPS)
+                        ? "#ff8800"
+                        : "#b0b0b0";
+                  return (
+                    <button
+                      key={t.address}
+                      type="button"
+                      onClick={() => setTarget(t.address)}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                        gap: 6,
+                        padding: "8px 10px",
+                        fontSize: 12,
+                        width: "100%",
+                        textAlign: "left",
+                        background: isSelected ? "#181818" : "transparent",
+                        color: "#e0e0e0",
+                        border: "none",
+                        borderBottom: "1px solid #111",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: "monospace",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={t.address}
+                      >
+                        {t.address.slice(0, 10)}…{t.address.slice(-6)}
+                      </span>
+                      <span style={{ color: riskColor, fontWeight: 600 }}>
+                        {formatCrBps(t.crBps)}
+                      </span>
+                      <span>{formatOne(t.debt)}</span>
+                      <span>{formatApt(t.collateral)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       <div className="card" style={{ padding: 16 }}>

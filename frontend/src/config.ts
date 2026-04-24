@@ -203,6 +203,12 @@ export const TOKENS: Record<string, TokenConfig> = {
     symbol: "APT",
     icon: "/tokens/apt.svg",
   },
+  ONE: {
+    meta: "0xee5ebaf6ff851955cccaa946f9339bab7f7407d72c6673b029576747ba3fadc4",
+    decimals: 8,
+    symbol: "ONE",
+    icon: "/tokens/one.svg",
+  },
   USDC: {
     meta: "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
     decimals: 6,
@@ -227,17 +233,17 @@ export const TOKENS: Record<string, TokenConfig> = {
     symbol: "lzUSDT",
     icon: "/tokens/lzusdt.svg",
   },
+  USD1: {
+    meta: "0x31ac2b889a89053be7d9afde9044a70522e8916bb0f0f5e8abda51db3dda2bee",
+    decimals: 6,
+    symbol: "USD1",
+    icon: "/tokens/usd1.png",
+  },
   DARBITEX: {
     meta: "0x8241d225df6dee465b2898686011c477d5863abccae16630c7145c3165e9c2d",
     decimals: 8,
     symbol: "DARBITEX",
     icon: "/tokens/darbitex.svg",
-  },
-  ONE: {
-    meta: "0xee5ebaf6ff851955cccaa946f9339bab7f7407d72c6673b029576747ba3fadc4",
-    decimals: 8,
-    symbol: "ONE",
-    icon: "/tokens/one.svg",
   },
 };
 

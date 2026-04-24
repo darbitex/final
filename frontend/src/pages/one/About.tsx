@@ -1,8 +1,51 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { APT_USD_PYTH_FEED, ONE_METADATA, ONE_PACKAGE, ONE_PARAMS } from "../../config";
 import { oneIsSealed, oneReadWarning } from "../../chain/one";
 import { decodeOneError } from "../../chain/oneErrors";
 import { createRpcPool } from "../../chain/rpc-pool";
+
+// The on-chain WARNING is a single flat string with 9 numbered points
+// prefixed "(1) ... (2) ... (9) ...". Split at each "(N) " marker so we
+// can render the number in red and give each clause its own block with
+// breathing room.
+function parseWarning(raw: string): { preamble: string; points: { num: string; body: string }[] } {
+  const parts = raw.split(/(?=\(\d+\))/);
+  const preamble = (parts[0] ?? "").trim();
+  const points: { num: string; body: string }[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    const m = parts[i].match(/^\((\d+)\)\s*([\s\S]*)$/);
+    if (m) points.push({ num: m[1], body: m[2].trim() });
+  }
+  return { preamble, points };
+}
+
+function WarningBlock({ raw }: { raw: string }) {
+  const { preamble, points } = useMemo(() => parseWarning(raw), [raw]);
+  return (
+    <div style={{ fontSize: 13, color: "#b0b0b0", lineHeight: 1.65 }}>
+      <p style={{ margin: 0 }}>{preamble}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
+        {points.map((p) => (
+          <div key={p.num} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span
+              style={{
+                color: "#ff6b6b",
+                fontWeight: 700,
+                fontVariantNumeric: "tabular-nums",
+                minWidth: 24,
+                textAlign: "right",
+                flexShrink: 0,
+              }}
+            >
+              ({p.num})
+            </span>
+            <span style={{ flex: 1 }}>{p.body}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const rpc = createRpcPool("one-about");
 
@@ -47,20 +90,7 @@ export function OneAbout() {
       <div className="card" style={{ padding: 16 }}>
         {err && <div className="err">{err}</div>}
         {!warning && !err && <div className="hint">Loading WARNING from chain…</div>}
-        {warning && (
-          <pre
-            style={{
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontSize: 12,
-              color: "#aaa",
-              margin: 0,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            }}
-          >
-            {warning}
-          </pre>
-        )}
+        {warning && <WarningBlock raw={warning} />}
       </div>
 
       <h2 className="section-title">Immutability proof</h2>

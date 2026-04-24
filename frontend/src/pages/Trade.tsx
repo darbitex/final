@@ -348,13 +348,21 @@ export function TradePage() {
             return u !== null ? <div className="usd-value">≈ {formatUsd(u)}</div> : null;
           })()}
           {connected && (
-            <div className="bal-static">
+            <button
+              type="button"
+              className="bal-link"
+              onClick={() => {
+                if (balIn.raw === 0n) return;
+                setAmountIn(String(balIn.formatted));
+              }}
+              disabled={balIn.raw === 0n}
+            >
               Balance: {balIn.loading ? "…" : balIn.formatted.toFixed(6)} {tokenIn.symbol}
               {(() => {
                 const u = usdValueOf(balIn.formatted, tokenIn.symbol, aptPrice);
                 return u !== null ? <span className="usd-inline"> · {formatUsd(u)}</span> : null;
               })()}
-            </div>
+            </button>
           )}
         </div>
         <div className="swap-row">

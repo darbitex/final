@@ -72,13 +72,11 @@ a:hover { text-decoration: underline; }
 
 /* Sub-nav (tabs inside a merged page) */
 .subnav {
-  display: flex; gap: 6px; margin-bottom: 16px;
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px;
   background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 12px; padding: 4px;
-  overflow-x: auto; scrollbar-width: none;
 }
-.subnav::-webkit-scrollbar { display: none; }
 .subnav a {
-  flex: 1 0 auto; text-align: center; padding: 8px 12px; border-radius: 8px;
+  flex: 1 1 auto; text-align: center; padding: 8px 10px; border-radius: 8px;
   color: #777; font-size: 13px; font-weight: 500; text-decoration: none;
   transition: all 0.15s; white-space: nowrap; cursor: pointer;
 }
@@ -500,6 +498,53 @@ a:hover { text-decoration: underline; }
 }
 .swap-card .swap-input input:read-only {
   color: #888;
+}
+
+/* Generic `.card` containers that host swap-row forms (ONE Trove / SP /
+   Redeem / Liquidate) get the same column-stacked layout as `.swap-card`.
+   Without this the parent `.swap-row { display: flex }` puts label,
+   input, and bal-link side-by-side and the balance button overlaps the
+   input column. */
+.card .swap-row {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  margin: 0;
+}
+.card .swap-row + .swap-row { margin-top: 10px; }
+.card .swap-row > label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #666;
+  margin-bottom: 6px;
+}
+.card .swap-row > .swap-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.card .swap-row > .swap-input > input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 500;
+  outline: none;
+  min-width: 0;
+}
+.card .swap-row > .bal-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 4px;
 }
 .swap-flip {
   align-self: center;
@@ -1093,8 +1138,8 @@ a:hover { text-decoration: underline; }
 .factory-lookup-row {
   display: flex; gap: 8px; margin-top: 8px; align-items: center;
 }
-.factory-lookup-row .factory-input { flex: 1; min-width: 0; }
-.factory-lookup-row .btn { flex-shrink: 0; }
+.factory-lookup-row .factory-input { flex: 1 1 auto; width: auto; min-width: 0; margin-top: 0; }
+.factory-lookup-row .btn { flex: 0 0 auto; width: auto; white-space: nowrap; }
 .factory-lookup-result {
   display: flex; align-items: center; gap: 10px;
   margin-top: 10px; font-size: 13px;

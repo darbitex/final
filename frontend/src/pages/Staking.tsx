@@ -1,8 +1,8 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
 import { TokenIcon } from "../components/TokenIcon";
-import { STAKING_PACKAGE, TOKENS, INITIAL_POOLS } from "../config";
-import { useFaBalance } from "../chain/balance";
+import { PACKAGE, STAKING_PACKAGE, TOKENS, INITIAL_POOLS } from "../config";
+import { fetchFaMetadata, useFaBalance } from "../chain/balance";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 import { useAddress } from "../wallet/useConnect";
@@ -289,6 +289,55 @@ function resolvePoolLabel(poolAddr: string): string {
   return p ? `${p.symbolA}/${p.symbolB}` : poolAddr.slice(0, 10) + "\u2026";
 }
 
+type DarbitexPoolEntry = {
+  address: string;
+  symbolA: string;
+  symbolB: string;
+};
+
+type PoolResourceShape = {
+  metadata_a: { inner: string };
+  metadata_b: { inner: string };
+};
+
+async function fetchAllDarbitexPools(): Promise<DarbitexPoolEntry[]> {
+  try {
+    const [addrs] = await rpc.viewFn<[string[]]>(
+      "pool_factory::get_all_pools",
+      [],
+      [],
+    );
+    const loaded = await Promise.all(
+      addrs.map(async (addr) => {
+        try {
+          const data = await rpc.rotatedGetResource<PoolResourceShape>(
+            String(addr),
+            `${PACKAGE}::pool::Pool`,
+          );
+          const [metaA, metaB] = await Promise.all([
+            fetchFaMetadata(data.metadata_a.inner),
+            fetchFaMetadata(data.metadata_b.inner),
+          ]);
+          return {
+            address: String(addr),
+            symbolA: metaA?.symbol ?? "?",
+            symbolB: metaB?.symbol ?? "?",
+          };
+        } catch {
+          return {
+            address: String(addr),
+            symbolA: "?",
+            symbolB: "?",
+          };
+        }
+      }),
+    );
+    return loaded;
+  } catch {
+    return [];
+  }
+}
+
 export function StakingBody() {
   const address = useAddress();
   const { signAndSubmitTransaction, connected } = useWallet();
@@ -296,8 +345,19 @@ export function StakingBody() {
 
   const [stakes, setStakes] = useState<StakeEntry[]>([]);
   const [pools, setPools] = useState<PoolEntry[]>([]);
+  const [darbitexPools, setDarbitexPools] = useState<DarbitexPoolEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllDarbitexPools().then((list) => {
+      if (!cancelled) setDarbitexPools(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Create reward pool state
   const [createPoolAddr, setCreatePoolAddr] = useState("");
@@ -591,8 +651,10 @@ export function StakingBody() {
               value={createPoolAddr}
               onChange={(e) => setCreatePoolAddr(e.target.value)}
             >
-              <option value="">Select a pool...</option>
-              {INITIAL_POOLS.map((p) => (
+              <option value="">
+                {darbitexPools.length === 0 ? "Loading pools\u2026" : "Select a pool..."}
+              </option>
+              {darbitexPools.map((p) => (
                 <option key={p.address} value={p.address}>
                   {p.symbolA}/{p.symbolB} ({p.address.slice(0, 10)}\u2026)
                 </option>

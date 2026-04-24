@@ -11,10 +11,10 @@ export function OneShell() {
       <div className="subnav">
         <NavLink end to="/one">Overview</NavLink>
         <NavLink to="/one/trove">Trove</NavLink>
-        <NavLink to="/one/sp">Stability Pool</NavLink>
+        <NavLink to="/one/sp" title="Stability Pool">SP</NavLink>
         <NavLink to="/one/redeem">Redeem</NavLink>
         <NavLink to="/one/liquidate">Liquidate</NavLink>
-        <NavLink to="/one/about">About ONE</NavLink>
+        <NavLink to="/one/about">About</NavLink>
       </div>
       <Outlet />
     </div>

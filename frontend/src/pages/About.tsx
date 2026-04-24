@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { INITIAL_POOLS, PACKAGE, POOL_FEE_BPS, TOKENS, TREASURY, TREASURY_BPS } from "../config";
+import { PACKAGE, POOL_FEE_BPS, TREASURY, TREASURY_BPS } from "../config";
+import { fetchFaMetadata } from "../chain/balance";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
 
 const rpc = createRpcPool("about");
@@ -8,19 +9,25 @@ type PoolSnapshot = {
   address: string;
   symbolA: string;
   symbolB: string;
+  decA: number;
+  decB: number;
   reserveA: bigint;
   reserveB: bigint;
 };
 
+type PoolResourceShape = {
+  reserve_a: string | number;
+  reserve_b: string | number;
+  metadata_a: { inner: string };
+  metadata_b: { inner: string };
+};
+
 type VolumeAggregate = {
   perToken: Record<string, bigint>;
+  perTokenDecimals: Record<string, number>;
   eventCount: number;
   indexerFailed: boolean;
 };
-
-function decimalsOf(symbol: string): number {
-  return TOKENS[symbol]?.decimals ?? 0;
-}
 
 export function AboutPage() {
   const [poolCount, setPoolCount] = useState<number | null>(null);
@@ -32,27 +39,37 @@ export function AboutPage() {
     let cancelled = false;
 
     (async () => {
+      let addrs: string[] = [];
       try {
         const [all] = await rpc.viewFn<[string[]]>("pool_factory::get_all_pools", [], []);
-        if (!cancelled) setPoolCount(all.length);
+        addrs = all.map((a) => String(a));
+        if (!cancelled) setPoolCount(addrs.length);
       } catch {
         if (!cancelled) setPoolCount(null);
       }
 
+      // Fetch Pool resource + FA metadata for every pool returned by the
+      // factory. Live discovery — new permissionless pools (ONE, DARBITEX,
+      // custom pairs) appear here without any frontend redeploy.
       const snapshots = await Promise.all(
-        INITIAL_POOLS.map(async (p) => {
+        addrs.map(async (addr) => {
           try {
-            const [rA, rB] = await rpc.viewFn<[string, string]>(
-              "pool::reserves",
-              [],
-              [p.address],
+            const data = await rpc.rotatedGetResource<PoolResourceShape>(
+              addr,
+              `${PACKAGE}::pool::Pool`,
             );
+            const [metaA, metaB] = await Promise.all([
+              fetchFaMetadata(data.metadata_a.inner),
+              fetchFaMetadata(data.metadata_b.inner),
+            ]);
             return {
-              address: p.address,
-              symbolA: p.symbolA,
-              symbolB: p.symbolB,
-              reserveA: BigInt(rA),
-              reserveB: BigInt(rB),
+              address: addr,
+              symbolA: metaA?.symbol ?? "?",
+              symbolB: metaB?.symbol ?? "?",
+              decA: metaA?.decimals ?? 0,
+              decB: metaB?.decimals ?? 0,
+              reserveA: BigInt(String(data.reserve_a ?? "0")),
+              reserveB: BigInt(String(data.reserve_b ?? "0")),
             };
           } catch {
             return null;
@@ -62,6 +79,24 @@ export function AboutPage() {
       if (!cancelled) {
         setPools(snapshots.filter((s): s is PoolSnapshot => s !== null));
         setLoading(false);
+      }
+
+      // Address → (symbol, decimals) per side, built from the snapshots above.
+      // Lets the volume aggregator resolve symbols for any pool the factory
+      // knows about, not just the INITIAL_POOLS seed list.
+      const poolInfo = new Map<
+        string,
+        { symbolA: string; symbolB: string; decA: number; decB: number }
+      >();
+      for (const s of snapshots) {
+        if (s) {
+          poolInfo.set(s.address.toLowerCase(), {
+            symbolA: s.symbolA,
+            symbolB: s.symbolB,
+            decA: s.decA,
+            decB: s.decB,
+          });
+        }
       }
 
       try {
@@ -84,24 +119,30 @@ export function AboutPage() {
         const result = await rpc.primary.queryIndexer<EventsQuery>({ query });
         if (cancelled) return;
         const perToken: Record<string, bigint> = {};
+        const perTokenDecimals: Record<string, number> = {};
         let eventCount = 0;
         for (const ev of result.events ?? []) {
           const d = ev.data;
           const poolAddr = String(d.pool_addr ?? "").toLowerCase();
           const amtIn = BigInt(String(d.amount_in ?? "0"));
           const aToB = !!d.a_to_b;
-          const poolSeed = INITIAL_POOLS.find(
-            (p) => p.address.toLowerCase() === poolAddr,
-          );
-          if (!poolSeed) continue;
-          const sideSymbol = aToB ? poolSeed.symbolA : poolSeed.symbolB;
+          const info = poolInfo.get(poolAddr);
+          if (!info) continue;
+          const sideSymbol = aToB ? info.symbolA : info.symbolB;
+          const sideDec = aToB ? info.decA : info.decB;
           perToken[sideSymbol] = (perToken[sideSymbol] ?? 0n) + amtIn;
+          perTokenDecimals[sideSymbol] = sideDec;
           eventCount += 1;
         }
-        setVolume({ perToken, eventCount, indexerFailed: false });
+        setVolume({ perToken, perTokenDecimals, eventCount, indexerFailed: false });
       } catch {
         if (!cancelled) {
-          setVolume({ perToken: {}, eventCount: 0, indexerFailed: true });
+          setVolume({
+            perToken: {},
+            perTokenDecimals: {},
+            eventCount: 0,
+            indexerFailed: true,
+          });
         }
       }
     })();
@@ -112,9 +153,12 @@ export function AboutPage() {
   }, []);
 
   const tvlByToken: Record<string, bigint> = {};
+  const tvlDecimals: Record<string, number> = {};
   for (const p of pools) {
     tvlByToken[p.symbolA] = (tvlByToken[p.symbolA] ?? 0n) + p.reserveA;
     tvlByToken[p.symbolB] = (tvlByToken[p.symbolB] ?? 0n) + p.reserveB;
+    tvlDecimals[p.symbolA] = p.decA;
+    tvlDecimals[p.symbolB] = p.decB;
   }
   const tvlEntries = Object.entries(tvlByToken).sort(([a], [b]) => a.localeCompare(b));
   const volumeEntries = volume
@@ -331,7 +375,9 @@ export function AboutPage() {
         {tvlEntries.map(([symbol, raw]) => (
           <div key={symbol} className="pool-row tvl-row">
             <span className="pair">{symbol}</span>
-            <span className="reserves">{fromRaw(raw, decimalsOf(symbol)).toFixed(4)}</span>
+            <span className="reserves">
+              {fromRaw(raw, tvlDecimals[symbol] ?? 0).toFixed(4)}
+            </span>
           </div>
         ))}
       </div>
@@ -345,8 +391,10 @@ export function AboutPage() {
         {!volume && <div className="hint">Loading events…</div>}
         {volume?.indexerFailed && (
           <div className="hint">
-            Indexer unavailable &mdash; volume requires the Aptos Labs indexer events API.
-            Reserves above are read directly from fullnode and always live.
+            Volume tracking paused &mdash; the Aptos Labs indexer <code>events</code>{" "}
+            table was deprecated 2026-09-08, and the replacement surface for
+            decoded event data is still landing. Reserves above are read directly
+            from fullnode and remain live.
           </div>
         )}
         {volume && !volume.indexerFailed && volumeEntries.length === 0 && (
@@ -359,7 +407,9 @@ export function AboutPage() {
             {volumeEntries.map(([symbol, raw]) => (
               <div key={symbol} className="pool-row tvl-row">
                 <span className="pair">{symbol}</span>
-                <span className="reserves">{fromRaw(raw, decimalsOf(symbol)).toFixed(4)}</span>
+                <span className="reserves">
+                  {fromRaw(raw, volume?.perTokenDecimals[symbol] ?? 0).toFixed(4)}
+                </span>
               </div>
             ))}
             <div className="hint">
@@ -449,9 +499,10 @@ export function AboutPage() {
       </p>
       <p>
         <strong>2. Treasury bootstrap.</strong> When the treasury accumulates{" "}
-        <strong>100 APT</strong> from organic protocol fees (the 10% surplus charge +
-        satellite creation fees), those funds bootstrap the initial DARBITEX/APT
-        liquidity pool on Darbitex itself.
+        <strong>200 APT</strong> from organic protocol fees (the 10% surplus charge +
+        satellite creation fees), those funds bootstrap the initial{" "}
+        <strong>ONE/DARBITEX</strong> liquidity pool on Darbitex itself, seeded with{" "}
+        <strong>99 ONE / 99 DARBITEX</strong>.
       </p>
       <p>
         <strong>3. LP staking activation.</strong> Once the liquidity pool exists, LP

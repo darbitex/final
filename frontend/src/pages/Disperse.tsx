@@ -8,6 +8,7 @@ import {
   GEOMI_API_KEY,
   TOKENS,
 } from "../config";
+import { fetchFaMetadata } from "../chain/balance";
 import { createRpcPool } from "../chain/rpc-pool";
 import { TokenIcon } from "../components/TokenIcon";
 import { useAddress } from "../wallet/useConnect";
@@ -19,8 +20,22 @@ const rpc = createRpcPool("disperse");
 const INDEXER_URL = "https://api.mainnet.aptoslabs.com/v1/graphql";
 
 type Source = "csv" | "fa" | "nft";
-type Mode = "uniform" | "custom";
+type Mode = "uniform" | "custom" | "proportional";
 type Row = { address: string; amount: bigint };
+
+// Recipient carries an optional "weight" alongside the editable airdrop
+// amount. Weight is the source-side signal — raw FA balance for FA-holder
+// sourcing, NFT count for NFT-holder sourcing, undefined for CSV rows
+// (CSV has no weighting context). Proportional mode distributes a user-
+// specified total by weight; Custom mode surfaces weight as "holds: X"
+// next to each inline amount input.
+type Recipient = {
+  address: string;
+  amount?: string;
+  weightRaw?: string;
+  weightDecimals?: number;
+  weightSymbol?: string;
+};
 
 function normAddr(s: string) {
   if (!s.startsWith("0x")) return null;
@@ -83,7 +98,10 @@ async function graphql<T>(query: string, variables: Record<string, unknown>): Pr
   return j.data as T;
 }
 
-async function fetchFaHolders(meta: string, minBalance: bigint): Promise<string[]> {
+async function fetchFaHolders(
+  meta: string,
+  minBalance: bigint,
+): Promise<{ address: string; balance: bigint }[]> {
   const query = `
     query($m:String!, $limit:Int!, $offset:Int!) {
       current_fungible_asset_balances(
@@ -91,7 +109,7 @@ async function fetchFaHolders(meta: string, minBalance: bigint): Promise<string[
         limit: $limit, offset: $offset, order_by: { amount: desc }
       ) { owner_address amount }
     }`;
-  const out: string[] = [];
+  const byAddr = new Map<string, bigint>();
   for (let offset = 0; offset < 50_000; offset += 1000) {
     const d = await graphql<{ current_fungible_asset_balances: { owner_address: string; amount: string }[] }>(
       query,
@@ -100,34 +118,44 @@ async function fetchFaHolders(meta: string, minBalance: bigint): Promise<string[
     const rows = d.current_fungible_asset_balances;
     if (!rows.length) break;
     for (const r of rows) {
-      if (BigInt(r.amount) >= minBalance) out.push(r.owner_address);
+      const amt = BigInt(r.amount);
+      if (amt < minBalance) continue;
+      byAddr.set(r.owner_address, (byAddr.get(r.owner_address) ?? 0n) + amt);
     }
     if (rows.length < 1000) break;
   }
-  return Array.from(new Set(out));
+  return Array.from(byAddr.entries())
+    .map(([address, balance]) => ({ address, balance }))
+    .sort((a, b) => (b.balance > a.balance ? 1 : b.balance < a.balance ? -1 : 0));
 }
 
-async function fetchNftHolders(collectionId: string): Promise<string[]> {
+async function fetchNftHolders(
+  collectionId: string,
+): Promise<{ address: string; count: bigint }[]> {
   const query = `
     query($c:String!, $limit:Int!, $offset:Int!) {
       current_token_ownerships_v2(
         where: { current_token_data: { collection_id: { _eq: $c } }, amount: { _gt: 0 } }
         limit: $limit, offset: $offset
-      ) { owner_address }
+      ) { owner_address amount }
     }`;
-  const out = new Set<string>();
+  const byAddr = new Map<string, bigint>();
   for (let offset = 0; offset < 50_000; offset += 1000) {
-    const d = await graphql<{ current_token_ownerships_v2: { owner_address: string }[] }>(query, {
-      c: collectionId,
-      limit: 1000,
-      offset,
-    });
+    const d = await graphql<{ current_token_ownerships_v2: { owner_address: string; amount: number | string }[] }>(
+      query,
+      { c: collectionId, limit: 1000, offset },
+    );
     const rows = d.current_token_ownerships_v2;
     if (!rows.length) break;
-    for (const r of rows) out.add(r.owner_address);
+    for (const r of rows) {
+      const n = BigInt(String(r.amount ?? "1"));
+      byAddr.set(r.owner_address, (byAddr.get(r.owner_address) ?? 0n) + n);
+    }
     if (rows.length < 1000) break;
   }
-  return Array.from(out);
+  return Array.from(byAddr.entries())
+    .map(([address, count]) => ({ address, count }))
+    .sort((a, b) => (b.count > a.count ? 1 : b.count < a.count ? -1 : 0));
 }
 
 async function resolveCustomToken(
@@ -186,8 +214,9 @@ export function DisperseBody() {
 
   const [mode, setMode] = useState<Mode>("uniform");
   const [uniformAmount, setUniformAmount] = useState("");
+  const [proportionalTotal, setProportionalTotal] = useState("");
 
-  const [recipients, setRecipients] = useState<{ address: string; amount?: string }[]>([]);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [fetchingSource, setFetchingSource] = useState(false);
   const [sourceError, setSourceError] = useState<string | null>(null);
 
@@ -219,9 +248,25 @@ export function DisperseBody() {
     setFetchingSource(true);
     setSourceError(null);
     try {
+      const srcMeta = await fetchFaMetadata(m);
+      if (!srcMeta) {
+        setSourceError("source FA metadata not resolvable");
+        return;
+      }
       const holders = await fetchFaHolders(m, BigInt(faMinBalance || "1"));
-      setRecipients(holders.map((a) => ({ address: a })));
-      setMode("uniform");
+      // Pre-fill `amount` with the human-readable holding so Custom mode
+      // surfaces a starting value (user scales/edits), and populate weight
+      // fields so Proportional mode has something to distribute by.
+      setRecipients(
+        holders.map((h) => ({
+          address: h.address,
+          amount: formatUnits(h.balance, srcMeta.decimals),
+          weightRaw: h.balance.toString(),
+          weightDecimals: srcMeta.decimals,
+          weightSymbol: srcMeta.symbol,
+        })),
+      );
+      setMode("custom");
     } catch (e) {
       setSourceError((e as Error).message);
     } finally {
@@ -238,8 +283,20 @@ export function DisperseBody() {
     setSourceError(null);
     try {
       const holders = await fetchNftHolders(nftCollectionInput.trim());
-      setRecipients(holders.map((a) => ({ address: a })));
-      setMode("uniform");
+      // Weight = NFT count (integer, 0 decimals). Pre-fill amount with the
+      // count so Custom mode shows a starting value; holders with 3 NFTs
+      // default to "3", 1-NFT holders to "1" — user scales across the
+      // whole list or per-row as they like.
+      setRecipients(
+        holders.map((h) => ({
+          address: h.address,
+          amount: h.count.toString(),
+          weightRaw: h.count.toString(),
+          weightDecimals: 0,
+          weightSymbol: "NFT",
+        })),
+      );
+      setMode("custom");
     } catch (e) {
       setSourceError((e as Error).message);
     } finally {
@@ -260,6 +317,11 @@ export function DisperseBody() {
   }, []);
 
   // ---- Derived summary ----
+  const hasWeights = useMemo(
+    () => recipients.length > 0 && recipients.every((r) => r.weightRaw !== undefined),
+    [recipients],
+  );
+
   const summary = useMemo(() => {
     if (recipients.length === 0 || decimals === null) return null;
     try {
@@ -269,7 +331,22 @@ export function DisperseBody() {
         const amt = parseUnits(uniformAmount, decimals);
         if (amt <= 0n) return null;
         rows = recipients.map((r) => ({ address: r.address, amount: amt }));
+      } else if (mode === "proportional") {
+        if (!proportionalTotal || !hasWeights) return null;
+        const totalRaw = parseUnits(proportionalTotal, decimals);
+        if (totalRaw <= 0n) return null;
+        // Sum weights as bigint; distribute totalRaw * weight[i] / sumWeight.
+        // Rounding dust accumulates on the last row so ∑rows = totalRaw exactly.
+        const weights = recipients.map((r) => BigInt(r.weightRaw!));
+        const sumW = weights.reduce((a, w) => a + w, 0n);
+        if (sumW === 0n) return null;
+        const amounts = weights.map((w) => (totalRaw * w) / sumW);
+        const consumed = amounts.reduce((a, x) => a + x, 0n);
+        if (amounts.length > 0) amounts[amounts.length - 1] += totalRaw - consumed;
+        rows = recipients.map((r, i) => ({ address: r.address, amount: amounts[i] }));
+        for (const r of rows) if (r.amount <= 0n) return null;
       } else {
+        // custom — each row takes its own `amount` string
         rows = recipients.map((r) => ({
           address: r.address,
           amount: parseUnits(r.amount || "0", decimals),
@@ -283,7 +360,7 @@ export function DisperseBody() {
     } catch {
       return null;
     }
-  }, [recipients, mode, uniformAmount, decimals]);
+  }, [recipients, mode, uniformAmount, proportionalTotal, decimals, hasWeights]);
 
   // ---- Submit ----
   const handleSubmit = useCallback(async () => {
@@ -370,11 +447,15 @@ export function DisperseBody() {
         {source === "csv" && (
           <>
             <label className="factory-label">
-              CSV (one line per recipient — `address` or `address,amount`)
+              Recipients (one per line)
+              <div style={{ fontSize: 11, color: "#777", marginTop: 2, fontWeight: 400 }}>
+                Paste just addresses and set a uniform amount below, OR add{" "}
+                <code>,amount</code> per line to send a different amount to each recipient.
+              </div>
               <textarea
                 className="factory-input"
                 rows={8}
-                placeholder="0xabc...,100&#10;0xdef...,250.5&#10;# comments start with #"
+                placeholder={"0xabc...        # uses uniform amount\n0xdef...,250.5  # this row gets 250.5\n# lines starting with # are comments"}
                 value={csvText}
                 onChange={(e) => setCsvText(e.target.value)}
                 style={{ fontFamily: "monospace", fontSize: 12 }}
@@ -512,26 +593,33 @@ export function DisperseBody() {
               className={mode === "uniform" ? "active" : ""}
               onClick={() => setMode("uniform")}
             >
-              Uniform
+              Same for all
             </button>
             <button
               type="button"
               className={mode === "custom" ? "active" : ""}
               onClick={() => setMode("custom")}
-              disabled={!recipients.every((r) => r.amount && r.amount.length > 0)}
+            >
+              Custom per recipient
+            </button>
+            <button
+              type="button"
+              className={mode === "proportional" ? "active" : ""}
+              onClick={() => setMode("proportional")}
+              disabled={!hasWeights}
               title={
-                !recipients.every((r) => r.amount && r.amount.length > 0)
-                  ? "Custom mode needs amounts in the source (CSV with 2 columns)"
-                  : undefined
+                hasWeights
+                  ? undefined
+                  : "Proportional mode needs weights — use the FA holders or NFT holders source"
               }
             >
-              Custom
+              Proportional to holdings
             </button>
           </div>
 
           {mode === "uniform" && (
             <label className="factory-label" style={{ marginTop: 12 }}>
-              Amount per recipient
+              Amount (sent to every recipient)
               <input
                 type="text"
                 className="factory-input"
@@ -540,6 +628,107 @@ export function DisperseBody() {
                 onChange={(e) => setUniformAmount(e.target.value)}
               />
             </label>
+          )}
+
+          {mode === "proportional" && hasWeights && (
+            <div style={{ marginTop: 12 }}>
+              <label className="factory-label">
+                Total to distribute (split by each holder's weight)
+                <input
+                  type="text"
+                  className="factory-input"
+                  placeholder="e.g. 10000"
+                  value={proportionalTotal}
+                  onChange={(e) => setProportionalTotal(e.target.value)}
+                />
+              </label>
+              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>
+                Each recipient receives{" "}
+                <code>total × weight / Σ weights</code>. Rounding dust goes to
+                the last row so the sum equals the total exactly.
+              </div>
+            </div>
+          )}
+
+          {mode === "custom" && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: "#999", marginBottom: 6 }}>
+                Amount per recipient ({recipients.length} total) &mdash; edit inline
+                {hasWeights && " · holdings pre-filled from source, edit or scale freely"}
+                :
+              </div>
+              <div
+                style={{
+                  maxHeight: 260,
+                  overflowY: "auto",
+                  border: "1px solid #1a1a1a",
+                  borderRadius: 4,
+                  padding: 6,
+                }}
+              >
+                {recipients.map((r, i) => {
+                  const weightLabel =
+                    r.weightRaw !== undefined
+                      ? `holds: ${formatUnits(
+                          BigInt(r.weightRaw),
+                          r.weightDecimals ?? 0,
+                        )}${r.weightSymbol ? " " + r.weightSymbol : ""}`
+                      : null;
+                  return (
+                    <div
+                      key={`${r.address}-${i}`}
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        padding: "4px 0",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: 11,
+                          color: "#aaa",
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                        title={r.address}
+                      >
+                        {r.address.slice(0, 10)}…{r.address.slice(-6)}
+                      </span>
+                      {weightLabel && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "#666",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {weightLabel}
+                        </span>
+                      )}
+                      <input
+                        type="text"
+                        className="factory-input"
+                        style={{ width: 120, marginTop: 0, fontSize: 12 }}
+                        placeholder="amount"
+                        value={r.amount ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setRecipients((prev) =>
+                            prev.map((p, idx) =>
+                              idx === i ? { ...p, amount: v } : p,
+                            ),
+                          );
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       )}
