@@ -32,16 +32,12 @@ export function Layout() {
       </div>
 
       <nav className="nav">
-        <NavLink to="/" end>Swap</NavLink>
-        <NavLink to="/aggregator">Aggregator</NavLink>
+        <NavLink to="/" end>Trade</NavLink>
         <NavLink to="/arbitrage">Arbitrage</NavLink>
-        <NavLink to="/pools">Pools</NavLink>
-        <NavLink to="/portfolio">Portfolio</NavLink>
-        <NavLink to="/factory">Factory</NavLink>
-        <NavLink to="/vault">Vault</NavLink>
-        <NavLink to="/staking">Staking</NavLink>
-        <NavLink to="/disperse">Disperse</NavLink>
-        <NavLink to="/protocol">Protocol</NavLink>
+        <NavLink to="/liquidity">Liquidity</NavLink>
+        <NavLink to="/earn">Earn</NavLink>
+        <NavLink to="/tools">Tools</NavLink>
+        <NavLink to="/one">ONE</NavLink>
         <NavLink to="/about">About</NavLink>
       </nav>
 

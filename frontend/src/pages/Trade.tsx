@@ -18,7 +18,7 @@ import { useAddress } from "../wallet/useConnect";
 // Independent pool — Aggregator bursts several parallel quote calls
 // (direct baseline + smart route + future external venues) and must
 // not share a semaphore with Swap or Pools.
-const rpc = createRpcPool("aggregator");
+const rpc = createRpcPool("trade");
 
 // Unified row shape for the quote table. Darbitex-internal rows are
 // synthetic (no venue adapter), external venues are marshalled through
@@ -80,7 +80,7 @@ function seedRows(): QuoteRow[] {
   ];
 }
 
-export function AggregatorPage() {
+export function TradePage() {
   const { signAndSubmitTransaction, connected } = useWallet();
   const address = useAddress();
   const [slippage] = useSlippage();
@@ -306,11 +306,11 @@ export function AggregatorPage() {
 
   return (
     <div className="container">
-      <h1 className="page-title">Aggregator</h1>
+      <h1 className="page-title">Trade</h1>
       <p className="page-sub">
-        Cross-venue quote comparison — Darbitex (direct + smart-routed) plus{" "}
-        {EXTERNAL_VENUES.map((v) => v.label).join(" / ")}. Pick the best output and
-        execute in one click.
+        Swap with cross-venue quote comparison — Darbitex (direct + smart-routed)
+        plus {EXTERNAL_VENUES.map((v) => v.label).join(" / ")}. Pick the best
+        output and execute in one click.
       </p>
 
       <div className="swap-card">

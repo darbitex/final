@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "/**": {
+      "Cache-Control": "public, max-age=3600"
+    },
+    "/assets/**": {
+      "Cache-Control": "public, max-age=31536000, immutable"
+    }
+  },
+  "routes": {
+    "/*": "/index.html"
+  },
+  "site_name": "Darbitex Final",
+  "object_id": "0x55103b69b54462f9efc7f58c3c6d134702662a7112e3e4e418bea13cf08163b4"
+}

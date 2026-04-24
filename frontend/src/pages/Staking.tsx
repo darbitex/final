@@ -289,7 +289,7 @@ function resolvePoolLabel(poolAddr: string): string {
   return p ? `${p.symbolA}/${p.symbolB}` : poolAddr.slice(0, 10) + "\u2026";
 }
 
-export function StakingPage() {
+export function StakingBody() {
   const address = useAddress();
   const { signAndSubmitTransaction, connected } = useWallet();
   const aptPrice = useAptPriceUsd();
@@ -444,8 +444,7 @@ export function StakingPage() {
   }, [address, depositPoolAddr, depositAmount, pools, signAndSubmitTransaction, loadData]);
 
   return (
-    <div className="container">
-      <h1 className="page-title">LP Staking</h1>
+    <>
       <p className="page-sub">
         Stake Darbitex LP positions, earn rewards. Claim LP swap fees while staked.
       </p>
@@ -667,6 +666,6 @@ export function StakingPage() {
         </div>
       )}
 
-    </div>
+    </>
   );
 }

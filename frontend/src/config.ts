@@ -102,6 +102,41 @@ export const DISPERSE_FEE_OCTAS = 100_000_000n;
 export const DISPERSE_MAX_PER_TX = 600;
 export const DISPERSE_FEE_CONFIRM_THRESHOLD_OCTAS = 500_000_000n;
 
+// ONE stablecoin — APT-collateralized, Pyth-oracled, sealed (auth_key=0x0,
+// ResourceCap destroyed 2026-04-24). Package + FA metadata addresses.
+export const ONE_PACKAGE =
+  "0x85ee9c43688e37bb2050327467c3a6ebcfa37375a8209df327dd77c0aab87387";
+export const ONE_METADATA =
+  "0xee5ebaf6ff851955cccaa946f9339bab7f7407d72c6673b029576747ba3fadc4";
+
+// Pyth Aptos package + APT/USD feed id. HERMES is the off-chain VAA
+// source — we fetch a signed price update, pass bytes to
+// `pyth::update_price_feeds_with_funder` (called via `*_pyth` entry
+// wrappers inside ONE.move), then consume the cached price.
+export const PYTH_PACKAGE =
+  "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387";
+export const APT_USD_PYTH_FEED =
+  "0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5";
+export const HERMES_ENDPOINT = "https://hermes.pyth.network";
+
+// Retail-first ONE parameters, locked at deploy. Sourced from ONE.move
+// constants. LIQ_BONUS_BPS is the *total* bonus on debt; liquidator
+// receives LIQ_LIQUIDATOR_BPS share of that, SP reserve gets
+// LIQ_SP_RESERVE_BPS, the rest (50%) stays in the SP collateral pool.
+export const ONE_PARAMS = {
+  MCR_BPS: 20000,
+  LIQ_THRESHOLD_BPS: 15000,
+  LIQ_BONUS_BPS: 1000,
+  LIQ_LIQUIDATOR_BPS: 2500,
+  LIQ_SP_RESERVE_BPS: 2500,
+  FEE_BPS: 100,
+  STALENESS_SECS: 60,
+  MIN_DEBT_RAW: 100_000_000n,
+  MIN_P_THRESHOLD: 1_000_000_000n,
+  ONE_DECIMALS: 8,
+  APT_DECIMALS: 8,
+} as const;
+
 // Hardcoded Move constant in arbitrage.move. 3-of-5 multisig.
 export const TREASURY =
   "0xdbce89113a975826028236f910668c3ff99c8db8981be6a448caa2f8836f9576";
@@ -197,6 +232,12 @@ export const TOKENS: Record<string, TokenConfig> = {
     decimals: 8,
     symbol: "DARBITEX",
     icon: "/tokens/darbitex.svg",
+  },
+  ONE: {
+    meta: "0xee5ebaf6ff851955cccaa946f9339bab7f7407d72c6673b029576747ba3fadc4",
+    decimals: 8,
+    symbol: "ONE",
+    icon: "/tokens/one.svg",
   },
 };
 

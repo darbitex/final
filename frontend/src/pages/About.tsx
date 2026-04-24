@@ -1,10 +1,130 @@
+import { useEffect, useState } from "react";
+import { INITIAL_POOLS, PACKAGE, POOL_FEE_BPS, TOKENS, TREASURY, TREASURY_BPS } from "../config";
+import { createRpcPool, fromRaw } from "../chain/rpc-pool";
+
+const rpc = createRpcPool("about");
+
+type PoolSnapshot = {
+  address: string;
+  symbolA: string;
+  symbolB: string;
+  reserveA: bigint;
+  reserveB: bigint;
+};
+
+type VolumeAggregate = {
+  perToken: Record<string, bigint>;
+  eventCount: number;
+  indexerFailed: boolean;
+};
+
+function decimalsOf(symbol: string): number {
+  return TOKENS[symbol]?.decimals ?? 0;
+}
+
 export function AboutPage() {
+  const [poolCount, setPoolCount] = useState<number | null>(null);
+  const [pools, setPools] = useState<PoolSnapshot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [volume, setVolume] = useState<VolumeAggregate | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [all] = await rpc.viewFn<[string[]]>("pool_factory::get_all_pools", [], []);
+        if (!cancelled) setPoolCount(all.length);
+      } catch {
+        if (!cancelled) setPoolCount(null);
+      }
+
+      const snapshots = await Promise.all(
+        INITIAL_POOLS.map(async (p) => {
+          try {
+            const [rA, rB] = await rpc.viewFn<[string, string]>(
+              "pool::reserves",
+              [],
+              [p.address],
+            );
+            return {
+              address: p.address,
+              symbolA: p.symbolA,
+              symbolB: p.symbolB,
+              reserveA: BigInt(rA),
+              reserveB: BigInt(rB),
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (!cancelled) {
+        setPools(snapshots.filter((s): s is PoolSnapshot => s !== null));
+        setLoading(false);
+      }
+
+      try {
+        type EventRow = {
+          data: { pool_addr?: string; amount_in?: string; a_to_b?: boolean };
+        };
+        type EventsQuery = { events: EventRow[] };
+        const query = {
+          query: `query SwappedEvents($type: String!) {
+            events(
+              where: { indexed_type: { _eq: $type } }
+              limit: 500
+              order_by: { transaction_version: desc }
+            ) {
+              data
+            }
+          }`,
+          variables: { type: `${PACKAGE}::pool::Swapped` },
+        };
+        const result = await rpc.primary.queryIndexer<EventsQuery>({ query });
+        if (cancelled) return;
+        const perToken: Record<string, bigint> = {};
+        let eventCount = 0;
+        for (const ev of result.events ?? []) {
+          const d = ev.data;
+          const poolAddr = String(d.pool_addr ?? "").toLowerCase();
+          const amtIn = BigInt(String(d.amount_in ?? "0"));
+          const aToB = !!d.a_to_b;
+          const poolSeed = INITIAL_POOLS.find(
+            (p) => p.address.toLowerCase() === poolAddr,
+          );
+          if (!poolSeed) continue;
+          const sideSymbol = aToB ? poolSeed.symbolA : poolSeed.symbolB;
+          perToken[sideSymbol] = (perToken[sideSymbol] ?? 0n) + amtIn;
+          eventCount += 1;
+        }
+        setVolume({ perToken, eventCount, indexerFailed: false });
+      } catch {
+        if (!cancelled) {
+          setVolume({ perToken: {}, eventCount: 0, indexerFailed: true });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const tvlByToken: Record<string, bigint> = {};
+  for (const p of pools) {
+    tvlByToken[p.symbolA] = (tvlByToken[p.symbolA] ?? 0n) + p.reserveA;
+    tvlByToken[p.symbolB] = (tvlByToken[p.symbolB] ?? 0n) + p.reserveB;
+  }
+  const tvlEntries = Object.entries(tvlByToken).sort(([a], [b]) => a.localeCompare(b));
+  const volumeEntries = volume
+    ? Object.entries(volume.perToken).sort(([a], [b]) => a.localeCompare(b))
+    : [];
+
   return (
     <div className="container about">
       <h1 className="page-title">About</h1>
-      <p className="tagline">
-        Decentralized Arbitrage Exchange on Aptos
-      </p>
+      <p className="tagline">Decentralized Arbitrage Exchange on Aptos</p>
 
       <div className="about-grid">
         <div className="about-stat">
@@ -38,8 +158,8 @@ export function AboutPage() {
         &mdash; each is an independent on-chain module that composes the core's
         public primitives without requiring any upgrade to the core itself.
         Cross-venue aggregation, flash arbitrage, token creation, time-locked
-        vaults, LP staking &mdash; all live on-chain with zero admin surface, zero
-        servers, and zero backend.
+        vaults, LP staking, and the ONE stablecoin &mdash; all live on-chain with
+        zero admin surface, zero servers, and zero backend.
       </p>
 
       <h2 className="section-title">Core AMM &mdash; the two counters</h2>
@@ -76,20 +196,6 @@ export function AboutPage() {
       </p>
       <p>
         The 1 bps swap fee goes 100% to LPs. There is no passive protocol fee slot.
-      </p>
-
-      <h2 className="section-title">Four execution surfaces</h2>
-      <p>
-        <strong>Swap</strong> &mdash; auto-routed, finds the best multi-hop path.{" "}
-        <strong>Execute path</strong> &mdash; run a pre-computed path.{" "}
-        <strong>Close triangle</strong> &mdash; real-capital cycle closure.{" "}
-        <strong>Close triangle flash</strong> &mdash; zero-capital flash cycle.
-      </p>
-      <p>
-        Each surface ships as an <code>entry</code> wrapper (for wallets), a
-        composable <code>public fun</code> (FA-in/FA-out, for satellite packages),
-        and a <code>#[view]</code> quote (for frontends). This three-tier API means
-        anyone can build on Darbitex without needing permission or a core upgrade.
       </p>
 
       <h2 className="section-title">Satellite ecosystem</h2>
@@ -142,6 +248,149 @@ export function AboutPage() {
           while locked &mdash; only the principal is gated by the unlock timestamp.
           Used for protocol-owned liquidity locks.
         </div>
+        <div className="about-sat">
+          <strong>ONE &mdash; APT-collateralized stablecoin</strong>
+          <span className="dim"> &mdash; </span>
+          Retail-first, 1 ONE minimum debt, sealed. Pyth-oracled APT/USD. 200%
+          MCR, 150% liquidation threshold, 10% bonus. Stability pool catches
+          liquidations, surplus scrubs the peg. Package{" "}
+          <code>0x85ee9c43…</code>, FA <code>0xee5ebaf6…</code>.
+        </div>
+      </div>
+
+      <h2 className="section-title">Protocol &mdash; live state</h2>
+      <p className="page-sub">
+        Zero admin surface, hardcoded treasury, 3-of-5 publisher multisig,
+        compatible upgrade policy during soak then immutable.
+      </p>
+
+      <section className="protocol-grid">
+        <div className="protocol-card">
+          <div className="protocol-label">Package / publisher multisig</div>
+          <div className="protocol-addr">
+            <a
+              href={`https://explorer.aptoslabs.com/account/${PACKAGE}?network=mainnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {PACKAGE}
+            </a>
+          </div>
+        </div>
+
+        <div className="protocol-card">
+          <div className="protocol-label">Treasury (hardcoded Move constant)</div>
+          <div className="protocol-addr">
+            <a
+              href={`https://explorer.aptoslabs.com/account/${TREASURY}?network=mainnet`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {TREASURY}
+            </a>
+          </div>
+        </div>
+
+        <div className="protocol-card small">
+          <div className="protocol-label">Pools on-chain</div>
+          <div className="protocol-big">{poolCount === null ? "—" : poolCount}</div>
+          <div className="protocol-note">
+            Live count from <code>pool_factory::get_all_pools</code>
+          </div>
+        </div>
+
+        <div className="protocol-card small">
+          <div className="protocol-label">LP fee</div>
+          <div className="protocol-big">{POOL_FEE_BPS} bps</div>
+          <div className="protocol-note">100% to LPs &mdash; no passive protocol slot</div>
+        </div>
+
+        <div className="protocol-card small">
+          <div className="protocol-label">Treasury cut</div>
+          <div className="protocol-big">{TREASURY_BPS / 100}%</div>
+          <div className="protocol-note">Only on measurable surplus over the direct baseline</div>
+        </div>
+
+        <div className="protocol-card small">
+          <div className="protocol-label">Core modules</div>
+          <div className="protocol-big">3</div>
+          <div className="protocol-note">
+            <code>pool</code> &middot; <code>pool_factory</code> &middot; <code>arbitrage</code>
+          </div>
+        </div>
+      </section>
+
+      <h2 className="section-title">TVL by token</h2>
+      <div className="pool-table">
+        <div className="pool-head">
+          <span>Token</span>
+          <span>Reserves summed</span>
+        </div>
+        {loading && <div className="hint">Loading reserves…</div>}
+        {!loading && tvlEntries.length === 0 && <div className="hint">No pool data.</div>}
+        {tvlEntries.map(([symbol, raw]) => (
+          <div key={symbol} className="pool-row tvl-row">
+            <span className="pair">{symbol}</span>
+            <span className="reserves">{fromRaw(raw, decimalsOf(symbol)).toFixed(4)}</span>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="section-title">Cumulative volume</h2>
+      <div className="pool-table">
+        <div className="pool-head">
+          <span>Token (side in)</span>
+          <span>Total volume</span>
+        </div>
+        {!volume && <div className="hint">Loading events…</div>}
+        {volume?.indexerFailed && (
+          <div className="hint">
+            Indexer unavailable &mdash; volume requires the Aptos Labs indexer events API.
+            Reserves above are read directly from fullnode and always live.
+          </div>
+        )}
+        {volume && !volume.indexerFailed && volumeEntries.length === 0 && (
+          <div className="hint">
+            No swap events found yet. Counter starts at zero on the indexer.
+          </div>
+        )}
+        {volume && !volume.indexerFailed && volumeEntries.length > 0 && (
+          <>
+            {volumeEntries.map(([symbol, raw]) => (
+              <div key={symbol} className="pool-row tvl-row">
+                <span className="pair">{symbol}</span>
+                <span className="reserves">{fromRaw(raw, decimalsOf(symbol)).toFixed(4)}</span>
+              </div>
+            ))}
+            <div className="hint">
+              Lifetime volume from last {volume.eventCount} indexed <code>Swapped</code> events.
+            </div>
+          </>
+        )}
+      </div>
+
+      <h2 className="section-title">Execution surfaces</h2>
+      <div className="venue-table">
+        <div className="venue-head">
+          <span>Surface</span>
+          <span>Role</span>
+        </div>
+        <div className="venue-row">
+          <span className="venue-name"><code>execute_path</code></span>
+          <span className="venue-out">Smart multi-hop swap along a pre-computed optimal path</span>
+        </div>
+        <div className="venue-row">
+          <span className="venue-name"><code>swap</code></span>
+          <span className="venue-out">Auto-routed in→out swap; finds the best path internally</span>
+        </div>
+        <div className="venue-row">
+          <span className="venue-name"><code>close_triangle</code></span>
+          <span className="venue-out">Real-capital cycle closure from caller's primary store</span>
+        </div>
+        <div className="venue-row">
+          <span className="venue-name"><code>close_triangle_flash</code></span>
+          <span className="venue-out">Flash-borrow → cycle → repay, zero up-front capital</span>
+        </div>
       </div>
 
       <h2 className="section-title">Universal flash loans</h2>
@@ -153,16 +402,6 @@ export function AboutPage() {
         cycle closure.
       </p>
 
-      <h2 className="section-title">LP as NFT</h2>
-      <p>
-        LP positions are Aptos objects. <code>add_liquidity</code> uses Uniswap V2
-        optimal-amount math &mdash; excess stays in your wallet.{" "}
-        <code>claim_lp_fees</code> harvests accrued fees without touching principal.{" "}
-        <code>remove_liquidity</code> burns the position for proportional reserves
-        plus unclaimed fees. Positions are freely transferable, lockable, and
-        stakeable.
-      </p>
-
       <h2 className="section-title">Audit &mdash; 13 passes across 3 rounds</h2>
       <p>
         The core package went through 3 audit rounds with 13 independent AI auditor
@@ -172,8 +411,8 @@ export function AboutPage() {
       </p>
       <p>
         Each satellite has its own audit trail (R1 minimum, 5 auditors each). The
-        Token Vault and Token Factory are permanently frozen on-chain after passing
-        audit.
+        Token Vault, Token Factory, and ONE are permanently frozen on-chain after
+        passing audit.
       </p>
       <p className="mute">Audits are aids, not guarantees. Read the code.</p>
 
@@ -194,16 +433,6 @@ export function AboutPage() {
         Pools, reserves, routes, and quotes are read directly from Aptos RPC.
       </p>
 
-      <h2 className="section-title">Prior art</h2>
-      <p>
-        The surplus-based fee concept is not new &mdash; CoW Protocol on Ethereum has
-        charged a surplus-based fee since 2024 (50% of quote improvement via an
-        off-chain solver auction). Darbitex's model is inspired by CoW; what is
-        distinct is the implementation: pure on-chain DFS pathfinding in Move with no
-        solver dependency, a 10% rate with no volume floor, and flash-loan triangle
-        closure as a first-class user primitive.
-      </p>
-
       <h2 className="section-title">When $DARBITEX?</h2>
       <p>
         The <strong>DARBITEX</strong> token has been created via the Token Factory
@@ -214,8 +443,9 @@ export function AboutPage() {
       </p>
       <p>
         <strong>1. POC proven.</strong> The core AMM, smart routing, flash arbitrage,
-        cross-venue aggregation, token factory, vault, LP staking, and LP locker are
-        all deployed and verified on Aptos mainnet. This milestone is complete.
+        cross-venue aggregation, token factory, vault, LP staking, LP locker, and
+        the ONE stablecoin are all deployed and verified on Aptos mainnet. This
+        milestone is complete.
       </p>
       <p>
         <strong>2. Treasury bootstrap.</strong> When the treasury accumulates{" "}
@@ -229,14 +459,6 @@ export function AboutPage() {
         who stake earn DARBITEX. The protocol's own trading fees continuously refill
         the treasury, which continuously funds LP staking rewards.
       </p>
-      <p>
-        At that point Darbitex becomes a{" "}
-        <strong>self-sustaining decentralized protocol</strong>: trading fees fund the
-        treasury, the treasury funds LP incentives, LP incentives attract liquidity,
-        liquidity enables better routing and more surplus capture, which feeds back
-        into the treasury. No external funding, no team allocation, no VC &mdash;
-        just a flywheel powered by actual protocol usage.
-      </p>
 
       <h2 className="section-title">Disclaimer</h2>
       <div className="about-disclaimer">
@@ -245,18 +467,15 @@ export function AboutPage() {
           <strong>one human and one AI (Claude, by Anthropic)</strong>. Every smart
           contract, every satellite module, every line of frontend code, and every
           audit submission was produced by this two-person team. The AI-conducted
-          audits (13 passes across 3 rounds) are{" "}
+          audits are{" "}
           <strong>AI-generated reviews, not professional security audits</strong> by
           a licensed firm. They are aids to development, not guarantees of correctness
           or safety.
         </p>
         <p>
-          Darbitex is a <strong>first mover</strong> in surplus-fee AMM design on
-          Aptos. There is no prior production deployment of this architecture on this
-          chain. The protocol, its satellites, and its tokenomics are all experimental
-          and unproven at scale. Smart contracts may contain undiscovered bugs. Funds
-          deposited into pools, vaults, staking contracts, or any other on-chain
-          component <strong>may be lost permanently</strong>.
+          Smart contracts may contain undiscovered bugs. Funds deposited into pools,
+          vaults, staking contracts, troves, the ONE stability pool, or any other
+          on-chain component <strong>may be lost permanently</strong>.
         </p>
         <p>
           There is{" "}
@@ -264,29 +483,11 @@ export function AboutPage() {
             no team, no company, no legal entity, no customer support, no insurance
             fund, and no recourse mechanism
           </strong>
-          . All code is published under The Unlicense (public domain). The 3-of-5
-          multisig controls upgrade policy during the soak period but provides no
-          warranty of any kind.
+          . All code is published under The Unlicense (public domain).
         </p>
         <p>
-          <strong>
-            Do not deposit more than you can afford to lose entirely.
-          </strong>{" "}
-          Nothing on this site or in this protocol constitutes investment advice,
-          financial advice, or a solicitation to buy, sell, or hold any token. The
-          $DARBITEX token, if and when launched, carries no promise of value, utility,
-          or return.
-        </p>
-        <p>
-          <strong>
-            By visiting, accessing, or using Darbitex &mdash; including but not
-            limited to the frontend at darbitex.wal.app, any smart contract
-            interaction, and any satellite service &mdash; you acknowledge that you
-            have read and understood this disclaimer, that you accept all risks, and
-            that you agree to hold harmless the creators, contributors, and multisig
-            signers from any and all liability, loss, or damage arising from your use
-            of the protocol.
-          </strong>
+          <strong>Do not deposit more than you can afford to lose entirely.</strong>{" "}
+          Nothing on this site or in this protocol constitutes investment advice.
         </p>
         <p className="mute" style={{ marginTop: 12 }}>
           Use at your own risk. You have been warned.

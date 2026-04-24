@@ -453,7 +453,7 @@ async function fetchRewardPools(): Promise<RewardPoolEntry[]> {
 
 // ===== Component =====
 
-export function VaultPage() {
+export function VaultBody() {
   const address = useAddress();
   const { signAndSubmitTransaction, connected } = useWallet();
   const aptPrice = useAptPriceUsd();
@@ -725,8 +725,7 @@ export function VaultPage() {
   // ===== Render =====
 
   return (
-    <div className="container">
-      <h1 className="page-title">Token Vault</h1>
+    <>
       <p className="page-sub">Lock, vest, or stake any Aptos token. 1 APT creation fee.</p>
 
       <div className="vault-tabs">
@@ -1187,6 +1186,6 @@ export function VaultPage() {
         </>
       )}
 
-    </div>
+    </>
   );
 }

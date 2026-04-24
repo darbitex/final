@@ -248,7 +248,7 @@ function formatCountdown(ts: number): string {
   return `${Math.floor(diff / 60)}m`;
 }
 
-export function PortfolioPage() {
+export function PortfolioBody() {
   const address = useAddress();
   const { signAndSubmitTransaction } = useWallet();
   const aptPrice = useAptPriceUsd();
@@ -430,16 +430,12 @@ export function PortfolioPage() {
 
   if (!address) {
     return (
-      <div className="container">
-        <h1 className="page-title">Portfolio</h1>
-        <p className="page-sub">Connect your wallet to view balances and LP positions.</p>
-      </div>
+      <p className="page-sub">Connect your wallet to view balances and LP positions.</p>
     );
   }
 
   return (
-    <div className="container">
-      <h1 className="page-title">Portfolio</h1>
+    <>
       <p className="page-sub">
         Your FA balances, LP positions, and locked positions on Darbitex.
         Positions auto-discovered via paginated <code>getAccountOwnedObjects</code>.
@@ -652,6 +648,6 @@ export function PortfolioPage() {
         onClose={() => setRemoveTarget(null)}
         onDone={() => { setRemoveTarget(null); refresh(); }}
       />
-    </div>
+    </>
   );
 }

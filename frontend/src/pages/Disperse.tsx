@@ -156,7 +156,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function DispersePage() {
+export function DisperseBody() {
   const address = useAddress();
   const { signAndSubmitTransaction } = useWallet();
 
@@ -337,16 +337,12 @@ export function DispersePage() {
 
   if (!address) {
     return (
-      <div className="container">
-        <h1 className="page-title">Disperse</h1>
-        <p className="page-sub">Connect your wallet to airdrop fungible assets to many addresses in one go.</p>
-      </div>
+      <p className="page-sub">Connect your wallet to airdrop fungible assets to many addresses in one go.</p>
     );
   }
 
   return (
-    <div className="container arb-wide">
-      <h1 className="page-title">Disperse</h1>
+    <>
       <p className="page-sub">
         Bulk send any Aptos FA to many recipients. Flat <strong>1 APT</strong> protocol fee per tx, batches of up to{" "}
         <strong>{DISPERSE_MAX_PER_TX}</strong> recipients.
@@ -653,6 +649,6 @@ export function DispersePage() {
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }

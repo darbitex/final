@@ -31,7 +31,7 @@ function isAsciiPrintable(s: string): boolean {
   return true;
 }
 
-export function FactoryPage() {
+export function FactoryBody() {
   const address = useAddress();
   const { signAndSubmitTransaction } = useWallet();
 
@@ -118,16 +118,12 @@ export function FactoryPage() {
 
   if (!address) {
     return (
-      <div className="container">
-        <h1 className="page-title">Token Factory</h1>
-        <p className="page-sub">Connect your wallet to create tokens.</p>
-      </div>
+      <p className="page-sub">Connect your wallet to create tokens.</p>
     );
   }
 
   return (
-    <div className="container">
-      <h1 className="page-title">Token Factory</h1>
+    <>
       <p className="page-sub">
         Create your own token on Aptos. Standard Fungible Asset, fully composable
         with all DEXs, wallets, and bridges. Fixed 1B supply, 8 decimals.
@@ -258,6 +254,6 @@ export function FactoryPage() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

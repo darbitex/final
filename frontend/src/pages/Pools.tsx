@@ -61,7 +61,7 @@ async function loadPoolRow(addr: string): Promise<PoolRow> {
   }
 }
 
-export function PoolsPage() {
+export function PoolsBody() {
   const [rows, setRows] = useState<PoolRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -116,8 +116,7 @@ export function PoolsPage() {
   }, [refreshKey]);
 
   return (
-    <div className="container">
-      <h1 className="page-title">Pools</h1>
+    <>
       <p className="page-sub">
         Permissionless canonical pools on Darbitex. Any wallet can create a new pool, seed
         liquidity, or burn a position — every surface below is public entry with no admin
@@ -240,6 +239,6 @@ export function PoolsPage() {
           refresh();
         }}
       />
-    </div>
+    </>
   );
 }
