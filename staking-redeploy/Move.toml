@@ -1,0 +1,24 @@
+[package]
+name = "DarbitexStaking"
+version = "0.1.0"
+upgrade_policy = "compatible"
+authors = ["Rera", "Claude (Anthropic)"]
+license = "Unlicense"
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dependencies.DarbitexFinal]
+local = "../"
+
+[dependencies.DarbitexLpLocker]
+local = "../lp-locker-redeploy"
+
+[addresses]
+darbitex_staking = "_"
+
+[dev-addresses]
+darbitex_staking = "0xBEEF"
+darbitex_lp_locker = "0xCAFE"
