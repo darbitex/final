@@ -54,7 +54,7 @@ export const HYPERION_POOL_TYPE =
 // address here — no Move or TypeScript changes required.
 export const THALA_POOL_SEEDS: string[] = [
   // APT / USDC (native Circle) WEIGHTED — 5 bps. Prime flashbot
-  // target: round-trip cost with Darbitex's 1 bps pool is ~6 bps.
+  // target: round-trip cost with Darbitex's 5 bps pool is ~10 bps.
   "0xa928222429caf1924c944973c2cd9fc306ec41152ba4de27a001327021a4dff7",
   // APT / USDt (native Tether) WEIGHTED — 30 bps. High-fee outlier,
   // kept for Aggregator quote comparison only. Not a flashbot target.
@@ -81,16 +81,14 @@ export const FACTORY_PACKAGE =
 export const VAULT_PACKAGE =
   "0x8f4060790bdba617a34d7c55e2332400b4f592cd1037aa9acd0620811155d4eb";
 
-// LP Staking satellite — stake Darbitex LP positions, earn rewards.
-// 3/5 multisig (same owners as PACKAGE). Compatible (follows core).
+// LP Locker + LP Staking redeploy — co-published under multisig 6/6+0xdead
+// (effectively immutable; quorum unreachable forever). Supersedes v1 locker
+// 0x45aeb402... and v1 staking 0xeec9f236... — those are deprecated and not
+// referenced by this frontend.
 export const STAKING_PACKAGE =
-  "0xeec9f2361d1ae5e3ce5884523ad5d7bce6948d6ca12496bf0d8b8a6cbebaa050";
-
-// LP Locker satellite — wraps LpPosition with time-based unlock.
-// 3/5 multisig (same owners as PACKAGE). claim_fees always allowed;
-// redeem gated by unlock_at.
+  "0xb6ca26fade34212464f475f95ef49257d3f7c4e22907a622c94d319a2648f714";
 export const LOCKER_PACKAGE =
-  "0x45aeb4023c7072427820e72fc247180f56c3d8d381ce6d8ee9ee7bc671d7dfc5";
+  "0xb6ca26fade34212464f475f95ef49257d3f7c4e22907a622c94d319a2648f714";
 
 // Disperse satellite — bulk FA airdrop (uniform + custom amounts).
 // 3/5 multisig, owner set has 0x0047 swapped in for 0x85 vs treasury.
@@ -102,28 +100,49 @@ export const DISPERSE_FEE_OCTAS = 100_000_000n;
 export const DISPERSE_MAX_PER_TX = 600;
 export const DISPERSE_FEE_CONFIRM_THRESHOLD_OCTAS = 500_000_000n;
 
-// ONE stablecoin — APT-collateralized, Pyth-oracled, sealed (auth_key=0x0,
-// ResourceCap destroyed 2026-04-24). Package + FA metadata addresses.
-export const ONE_PACKAGE =
-  "0x85ee9c43688e37bb2050327467c3a6ebcfa37375a8209df327dd77c0aab87387";
-export const ONE_METADATA =
-  "0xee5ebaf6ff851955cccaa946f9339bab7f7407d72c6673b029576747ba3fadc4";
+// D stablecoin (v0.2.0) — APT-collateralized, Pyth-oracled, sealed
+// (resource-account ResourceCap destroyed 2026-04-29). Successor to
+// ONE; same Liquity-descended core but with 0.1 D MIN_DEBT (cuts
+// fee-cascade trap), oracle-free donate_to_sp / donate_to_reserve, and
+// 10/90 fee split (10% direct to SP pool, 90% pro-rata to keyed SP
+// depositors via fee accumulator).
+export const D_PACKAGE =
+  "0x587c80846b18b7d7c3801fe11e88ca114305a5153082b51d0d2547ad48622c77";
+export const D_METADATA =
+  "0x9015d5a6bbca103bc821a745a7fd3eb2ee1e535d3af65ac9fb4c7d308355c390";
 
 // Pyth Aptos package + APT/USD feed id. HERMES is the off-chain VAA
 // source — we fetch a signed price update, pass bytes to
 // `pyth::update_price_feeds_with_funder` (called via `*_pyth` entry
-// wrappers inside ONE.move), then consume the cached price.
+// wrappers inside D.move), then consume the cached price.
 export const PYTH_PACKAGE =
   "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387";
 export const APT_USD_PYTH_FEED =
   "0x03ae4db29ed4ae33d323568895aa00337e658e348b37509f5372ae51f0af00d5";
 export const HERMES_ENDPOINT = "https://hermes.pyth.network";
 
-// Retail-first ONE parameters, locked at deploy. Sourced from ONE.move
+// Five FungibleStore object addresses for D — all derived from the
+// deployer GUID counter in init_module_inner and stable for the
+// package lifetime. Hardcoded here so the balance sheet doesn't burn
+// 5 extra RPCs per page load resolving them via the *_addr() views.
+// Verifiable on-chain by calling D::{fee_pool,sp_pool,sp_coll_pool,
+// reserve_coll,treasury}_addr().
+export const D_STORES = {
+  fee_pool: "0x9609e7dc1031ce34ae6ee032ac15a1370880f13af3a85202f86cc85c2458455a",
+  sp_pool: "0x5e2b58e08a56a6d45a0ea8a043d47b68a9b2591a6eab89d931965ce68a5f89e2",
+  sp_coll_pool: "0x9f7067b4ee7d088084bbefd7a31efbf1424ac9a2bf1c949942fd5f2fc9c58f31",
+  reserve_coll: "0xf241ca7c86ace9e0a267abce9ea8fbce1d5a814fcace4f86e8dd0313c2622868",
+  treasury: "0x9593efef231032c3988739aa7108af46e06f4e2c6a89e6b545f2dfb771c4a969",
+} as const;
+
+// Retail-first D parameters, locked at deploy. Sourced from D.move
 // constants. LIQ_BONUS_BPS is the *total* bonus on debt; liquidator
-// receives LIQ_LIQUIDATOR_BPS share of that, SP reserve gets
+// receives LIQ_LIQUIDATOR_BPS share of that, reserve gets
 // LIQ_SP_RESERVE_BPS, the rest (50%) stays in the SP collateral pool.
-export const ONE_PARAMS = {
+// MIN_DEBT_RAW is 0.1 D (10_000_000) vs ONE's 1 ONE — the smaller
+// floor avoids the fee-cascade trap where a 1% mint fee on a trove at
+// MIN_DEBT can never be re-borrowed to close.
+export const D_PARAMS = {
   MCR_BPS: 20000,
   LIQ_THRESHOLD_BPS: 15000,
   LIQ_BONUS_BPS: 1000,
@@ -131,9 +150,9 @@ export const ONE_PARAMS = {
   LIQ_SP_RESERVE_BPS: 2500,
   FEE_BPS: 100,
   STALENESS_SECS: 60,
-  MIN_DEBT_RAW: 100_000_000n,
+  MIN_DEBT_RAW: 10_000_000n,
   MIN_P_THRESHOLD: 1_000_000_000n,
-  ONE_DECIMALS: 8,
+  D_DECIMALS: 8,
   APT_DECIMALS: 8,
 } as const;
 
@@ -144,8 +163,8 @@ export const TREASURY =
 // TREASURY_BPS = 1_000 (10%) on measurable surplus — hardcoded on-chain.
 export const TREASURY_BPS = 1000;
 
-// LP fee on the x*y=k pool primitive. 1 bps. 100% to LPs; no passive slot.
-export const POOL_FEE_BPS = 1;
+// LP fee on the x*y=k pool primitive. 5 bps. 100% to LPs; no passive slot.
+export const POOL_FEE_BPS = 5;
 
 // Geomi (Aptos Labs developer portal) frontend API key. Domain-restricted
 // server-side: only accepted when `Origin` header matches a whitelisted
@@ -203,10 +222,10 @@ export const TOKENS: Record<string, TokenConfig> = {
     symbol: "APT",
     icon: "/tokens/apt.svg",
   },
-  ONE: {
-    meta: "0xee5ebaf6ff851955cccaa946f9339bab7f7407d72c6673b029576747ba3fadc4",
+  D: {
+    meta: "0x9015d5a6bbca103bc821a745a7fd3eb2ee1e535d3af65ac9fb4c7d308355c390",
     decimals: 8,
-    symbol: "ONE",
+    symbol: "D",
     icon: "/tokens/one.svg",
   },
   USDC: {

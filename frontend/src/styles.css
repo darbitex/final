@@ -1183,3 +1183,22 @@ a:hover { text-decoration: underline; }
   display: grid; grid-template-columns: 1fr 1fr 60px;
   padding: 8px 0; border-bottom: 1px solid #0f0f0f;
 }
+
+/* Trade page quote details — niocoin-style spot/effective/impact box */
+.quote-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #1a1a1a;
+  border-radius: 6px;
+  background: #0a0a0a;
+  font-size: 13px;
+}
+.quote-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 0;
+}
+.quote-row + .quote-row { border-top: 1px solid #111; }
+.quote-row .dim { color: #777; }
+.impact-good { color: #6eff8e; }
+.impact-warn { color: #ff8800; }
+.impact-bad  { color: #ff6b6b; font-weight: 600; }

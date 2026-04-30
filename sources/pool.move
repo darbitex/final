@@ -1,7 +1,7 @@
 /// Darbitex — pool primitive.
 ///
-/// One canonical pool per pair. x*y=k constant product. 1 bps swap fee,
-/// 1 bps flash fee, 100% LP. LP positions are Aptos objects with a
+/// One canonical pool per pair. x*y=k constant product. 5 bps swap fee,
+/// 5 bps flash fee, 100% LP. LP positions are Aptos objects with a
 /// global fee accumulator + per-position debt snapshot. Flash loan
 /// primitive (hot-potato receipt) is exposed for composable arb flows.
 /// Zero admin surface.
@@ -24,12 +24,18 @@ module darbitex::pool {
 
     // ===== Constants =====
 
-    const SWAP_FEE_BPS: u64 = 1;
-    const FLASH_FEE_BPS: u64 = 1;
+    const SWAP_FEE_BPS: u64 = 5;
+    const FLASH_FEE_BPS: u64 = 5;
     const BPS_DENOM: u64 = 10_000;
     const MINIMUM_LIQUIDITY: u64 = 1_000;
     const SCALE: u128 = 1_000_000_000_000;
     const U64_MAX: u64 = 18446744073709551615;
+
+    // User-facing risk disclosure. Exposed via read_warning() so satellites,
+    // wallets, explorers, and integrators can surface it on-chain. ASCII only.
+    // Evergreen phrasing: avoid time-bound or version-specific claims since
+    // future upgrades may freeze this text by sealing the package.
+    const WARNING: vector<u8> = b"DARBITEX FINAL is an x*y=k AMM on Aptos. Upgrade policy is compatible and the publisher is a 3-of-5 multisig (a future flip to immutable is possible). Audit this code yourself before interacting. KNOWN LIMITATIONS: (1) PRICE SOURCE - Pool reserves are the only price input. There is no oracle. Spot price is manipulable by sufficiently large swaps relative to depth. Standard x*y=k AMM property. (2) CAPITAL INEFFICIENCY - V2 full-range liquidity. Lower capital efficiency than V3 CLMM by design. The trade-off is V2 mathematical security plus always-in-range LP (positions never go out of range and never stop earning). (3) SLIPPAGE AND THIN LIQUIDITY - Several Darbitex pools were seeded with small initial reserves. Price impact on non-trivial swap sizes can be material and quotes can drift between simulation and execution. Always set a meaningful min_out floor and inspect pool reserves (via reserves(pool_addr)) before submitting. (4) LP-AS-OBJECT - LP positions are Aptos objects (LpPosition) not fungible assets. They cannot be used as collateral by external lending venues without an adapter and may not be routable by external aggregators. Trade-off accepted for per-position fee accounting and claim-without-burn capability. (5) FLASH LOAN SAFETY - flash_borrow returns a FungibleAsset plus a hot-potato FlashReceipt that MUST be consumed by flash_repay in the same transaction. Strict repay equality (amount + fee) prevents under or overpay. A per-pool locked flag closes the dispatchable-FA reentrancy surface. (6) MINIMUM LIQUIDITY - the first 1000 LP shares are locked at pool creation as anti-cornering protection on the first depositor. Permanently inaccessible. (7) TREASURY CUT - the arbitrage module charges 10 percent of measurable surplus over a canonical direct-hop baseline on smart-routed swaps and on flash-based cycle closures. The treasury address is hardcoded. The pool primitive itself has no protocol cut: 100 percent of swap and flash fees accrue to LP via the per-share accumulator. (8) CANONICAL PAIR - one pool per (metadata_a, metadata_b) pair via the factory. The first creator picks the initial reserve ratio. Subsequent depositors take that ratio as truth until arbitrage corrects it. (9) NO RESCUE - no admin emergency pause, no fund recovery, no migration helper. Loss of access to an LpPosition object or transfer to a wrong address has no recourse. Direct FA donations to a pool address bypass the LP accumulator and are permanently stuck. (10) UPGRADE STATUS - upgrade_policy is compatible. The 3-of-5 multisig publisher can deploy ABI-compatible updates (additive views, defensive guards, parameter changes within compat rules). Owners may flip to immutable in the future, after which no further changes are possible. While compatible, every upgrade is a trust assumption on the multisig signers. (11) AUTHORSHIP AND AUDIT DISCLOSURE - Darbitex was built by a solo developer working with Claude (Anthropic AI). All audits performed are AI-based: multi-round Claude self-audit plus external multi-LLM review (Gemini, Grok, Qwen, Kimi, DeepSeek, Perplexity, ChatGPT). NO professional human security audit firm has reviewed this code. All losses from bugs, exploits, market manipulation, oracle issues, user error, malicious counterparties, or any other cause whatsoever are borne entirely by users. By interacting with Darbitex (depositing liquidity, swapping, taking flash loans, transferring positions, or any other operation) you confirm that you have read and understood all numbered limitations in this disclosure and accept full responsibility for any and all losses. (12) UNKNOWN FUTURE LIMITATIONS - This list reflects only limitations identified at the time of disclosure. Future analysis, novel attack vectors, unforeseen interactions with other Aptos protocols, framework changes, market dynamics, or regulatory developments may reveal additional weaknesses not enumerated here. Treat the preceding items as a non-exhaustive lower bound on known risks, not a complete enumeration.";
 
     // ===== Errors =====
 
@@ -790,11 +796,13 @@ module darbitex::pool {
         primary_fungible_store::deposit(provider_addr, fa_b);
     }
 
-    // ===== Minimal state readers =====
+    // ===== State readers =====
     //
-    // Only what the arbitrage module + frontend pool list need. LP
-    // position views (supply, fees, pending) are intentionally omitted
-    // — client-side RPC can read resources directly.
+    // Full pool + LP position view surface. Includes composability
+    // fields (fee accumulators, position fee debt, pending fees,
+    // pool_addr) so satellites — yield aggregators, LP escrow, locker,
+    // staking, marketplace — can compose without requiring a pool
+    // upgrade.
 
     #[view]
     public fun pool_exists(pool_addr: address): bool {
@@ -822,4 +830,52 @@ module darbitex::pool {
     public fun position_shares(pos: Object<LpPosition>): u64 acquires LpPosition {
         borrow_global<LpPosition>(object::object_address(&pos)).shares
     }
+
+    // Cumulative LP fee accumulators (per-share, scaled by SCALE = 1e12).
+    // Satellites snapshot debt at stake-time and compose with
+    // position_fee_debt to compute pending without touching pool state.
+    #[view]
+    public fun lp_fee_per_share(pool_addr: address): (u128, u128) acquires Pool {
+        let p = borrow_global<Pool>(pool_addr);
+        (p.lp_fee_per_share_a, p.lp_fee_per_share_b)
+    }
+
+    // Pool address this position belongs to. Required by satellites
+    // (LP staking, locker, marketplace) that consume Object<LpPosition>
+    // and must verify the underlying pool identity.
+    #[view]
+    public fun position_pool_addr(pos: Object<LpPosition>): address acquires LpPosition {
+        borrow_global<LpPosition>(object::object_address(&pos)).pool_addr
+    }
+
+    // Per-position fee-debt snapshots (last claim's per-share). Pair
+    // with lp_fee_per_share(pool_addr) to compute pending unclaimed fees
+    // off-chain without triggering claim_lp_fees.
+    #[view]
+    public fun position_fee_debt(pos: Object<LpPosition>): (u128, u128) acquires LpPosition {
+        let p = borrow_global<LpPosition>(object::object_address(&pos));
+        (p.fee_debt_a, p.fee_debt_b)
+    }
+
+    // Pending unclaimed LP fees for pos against the position's pool.
+    // Pure read; no state mutation. Returns (0,0) if pool was deleted
+    // (defensive: pool is currently never deleted, future-evolution guard).
+    #[view]
+    public fun position_pending_fees(pos: Object<LpPosition>): (u64, u64) acquires Pool, LpPosition {
+        let position = borrow_global<LpPosition>(object::object_address(&pos));
+        if (!exists<Pool>(position.pool_addr)) return (0, 0);
+        let pool = borrow_global<Pool>(position.pool_addr);
+        let pending_a = pending_from_accumulator(
+            pool.lp_fee_per_share_a, position.fee_debt_a, position.shares
+        );
+        let pending_b = pending_from_accumulator(
+            pool.lp_fee_per_share_b, position.fee_debt_b, position.shares
+        );
+        (pending_a, pending_b)
+    }
+
+    // User-facing risk disclosure. Pure constant getter, no state access.
+    // See the WARNING constant at the top of the module for content.
+    #[view]
+    public fun read_warning(): vector<u8> { WARNING }
 }

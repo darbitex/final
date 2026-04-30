@@ -45,7 +45,7 @@
 ///      the anchor amount, runs the cycle, repays, and returns the
 ///      caller's 90% profit share.
 ///
-/// All execution paths pay the 1 bps LP fee per pool touched via
+/// All execution paths pay the 5 bps LP fee per pool touched via
 /// `pool::swap`. External flash-loan providers (Aave) compose
 /// trivially with `close_triangle_compose` or `swap_compose` by
 /// withdrawing FA from their borrow callback and feeding it in.
@@ -636,7 +636,7 @@ module darbitex::arbitrage {
     // ===== Composable: raw pool-path execution (no treasury cut) =====
 
     /// Execute a pre-computed multi-hop path through the specified
-    /// pools. Each leg pays its 1 bps LP fee via `pool::swap`.
+    /// pools. Each leg pays its 5 bps LP fee via `pool::swap`.
     /// Direction at each leg is inferred from the FA's metadata —
     /// the caller provides only the pool sequence.
     ///

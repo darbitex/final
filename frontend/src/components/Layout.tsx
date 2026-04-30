@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { PACKAGE } from "../config";
+import { PACKAGE, POOL_FEE_BPS } from "../config";
 import { ConnectButton } from "./ConnectButton";
 import { RpcOverrideButton } from "./RpcOverrideButton";
 import { SlippageButton } from "./SlippageButton";
@@ -37,7 +37,7 @@ export function Layout() {
         <NavLink to="/liquidity">Liquidity</NavLink>
         <NavLink to="/earn">Earn</NavLink>
         <NavLink to="/tools">Tools</NavLink>
-        <NavLink to="/one">ONE</NavLink>
+        <NavLink to="/d">D</NavLink>
         <NavLink to="/about">About</NavLink>
       </nav>
 
@@ -49,7 +49,7 @@ export function Layout() {
         <a href={explorer} target="_blank" rel="noopener noreferrer">
           Darbitex
         </a>{" "}
-        · Aptos Mainnet · 1 bps LP fee{" "}
+        · Aptos Mainnet · {POOL_FEE_BPS} bps LP fee{" "}
         <a
           className="social"
           href="https://x.com/Darbitex"

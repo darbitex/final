@@ -2,7 +2,7 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
 import { RemoveLiquidityModal, type RemoveTarget } from "../components/RemoveLiquidityModal";
 import { TokenIcon } from "../components/TokenIcon";
-import { INITIAL_POOLS, LOCKER_PACKAGE, PACKAGE, TOKENS, type TokenConfig } from "../config";
+import { INITIAL_POOLS, LOCKER_PACKAGE, PACKAGE, STAKING_PACKAGE, TOKENS, type TokenConfig } from "../config";
 import { fetchFaBalance, fetchFaMetadata } from "../chain/balance";
 import { formatUsd, useAptPriceUsd, usdValueOf } from "../chain/prices";
 import { createRpcPool, fromRaw } from "../chain/rpc-pool";
@@ -23,7 +23,7 @@ type LpPositionResource = {
 
 type LockedPositionResource = {
   position: { inner: string };
-  unlock_at: string | number;
+  unlock_at_seconds: string | number;
 };
 
 type PoolResource = {
@@ -50,6 +50,60 @@ type LockedEntry = LpEntry & {
   lockerAddr: string;
   unlockAt: number;
 };
+
+type StakeTarget =
+  | { kind: "lp"; entry: LpEntry }
+  | { kind: "locked"; entry: LockedEntry };
+
+type StakablePool = {
+  addr: string;
+  poolAddr: string;
+  rewardSymbol: string;
+};
+
+async function fetchStakablePoolsFor(
+  poolAddr: string,
+): Promise<StakablePool[]> {
+  try {
+    const events = await fetch("https://api.mainnet.aptoslabs.com/v1/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `{
+          events(
+            where: {type: {_eq: "${STAKING_PACKAGE}::staking::LpRewardPoolCreated"}}
+            order_by: {transaction_version: desc}
+            limit: 100
+          ) { data }
+        }`,
+      }),
+    }).then((r) => r.json());
+
+    const evs = events?.data?.events ?? [];
+    const matching = evs.filter(
+      (ev: { data: { pool_addr: string } }) =>
+        ev.data.pool_addr.toLowerCase() === poolAddr.toLowerCase(),
+    );
+
+    const out: StakablePool[] = [];
+    for (const ev of matching) {
+      const d = ev.data as {
+        reward_pool_addr: string;
+        pool_addr: string;
+        reward_token: string;
+      };
+      const meta = await fetchFaMetadata(d.reward_token);
+      out.push({
+        addr: d.reward_pool_addr,
+        poolAddr: d.pool_addr,
+        rewardSymbol: meta?.symbol ?? d.reward_token.slice(0, 8) + "…",
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
 
 async function resolvePool(
   poolAddr: string,
@@ -207,7 +261,7 @@ async function discoverAll(
   const locked: LockedEntry[] = [];
   for (const { lockerAddr, locked: loc } of rawLocked) {
     const posAddr = loc.position.inner;
-    const unlockAt = Number(loc.unlock_at);
+    const unlockAt = Number(loc.unlock_at_seconds);
     try {
       const pos = await rpc.rotatedGetResource<LpPositionResource>(
         posAddr,
@@ -273,6 +327,15 @@ export function PortfolioBody() {
 
   // Redeem state
   const [redeeming, setRedeeming] = useState<string | null>(null);
+
+  // Stake modal state
+  const [stakeTarget, setStakeTarget] = useState<StakeTarget | null>(null);
+  const [stakablePools, setStakablePools] = useState<StakablePool[]>([]);
+  const [stakeRewardPool, setStakeRewardPool] = useState("");
+  const [stakeAgreed, setStakeAgreed] = useState(false);
+  const [staking, setStaking] = useState(false);
+  const [stakeMsg, setStakeMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [loadingStakePools, setLoadingStakePools] = useState(false);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
@@ -426,6 +489,46 @@ export function PortfolioBody() {
     setLockMsg(null);
   }
 
+  function openStakeModal(target: StakeTarget) {
+    setStakeTarget(target);
+    setStakeRewardPool("");
+    setStakeAgreed(false);
+    setStakeMsg(null);
+    setStakablePools([]);
+    setLoadingStakePools(true);
+    const poolAddr = target.kind === "lp" ? target.entry.poolAddr : target.entry.poolAddr;
+    fetchStakablePoolsFor(poolAddr)
+      .then((p) => setStakablePools(p))
+      .finally(() => setLoadingStakePools(false));
+  }
+
+  async function submitStake() {
+    if (!address || !stakeTarget || !stakeRewardPool) return;
+    setStaking(true);
+    setStakeMsg(null);
+    try {
+      const isLocked = stakeTarget.kind === "locked";
+      const fn = isLocked ? "stake_locked_lp" : "stake_lp";
+      const objAddr = isLocked
+        ? stakeTarget.entry.lockerAddr
+        : stakeTarget.entry.objectAddr;
+      const result = await signAndSubmitTransaction({
+        data: {
+          function: `${STAKING_PACKAGE}::staking::${fn}`,
+          typeArguments: [],
+          functionArguments: [stakeRewardPool, objAddr],
+        },
+      });
+      setStakeMsg({ text: `Staked: ${result.hash.slice(0, 12)}…`, error: false });
+      setStakeTarget(null);
+      refresh();
+    } catch (e) {
+      setStakeMsg({ text: (e as Error).message, error: true });
+    } finally {
+      setStaking(false);
+    }
+  }
+
   const minDate = new Date(Date.now() + 86400_000).toISOString().split("T")[0];
 
   if (!address) {
@@ -520,6 +623,11 @@ export function PortfolioBody() {
                   >
                     {redeeming === p.lockerAddr ? "Redeeming…" : "Redeem"}
                   </button>
+                  <button type="button" className="btn btn-secondary"
+                    onClick={() => openStakeModal({ kind: "locked", entry: p })}
+                  >
+                    Stake
+                  </button>
                 </div>
                 {claimMsg && claimMsg.id === p.lockerAddr && (
                   <div className={`modal-status ${claimMsg.error ? "error" : ""}`}>{claimMsg.text}</div>
@@ -586,6 +694,9 @@ export function PortfolioBody() {
             <button type="button" className="btn btn-secondary" onClick={() => openLockModal(p)}>
               Lock
             </button>
+            <button type="button" className="btn btn-secondary" onClick={() => openStakeModal({ kind: "lp", entry: p })}>
+              Stake
+            </button>
           </div>
           {claimMsg && claimMsg.id === p.objectAddr && (
             <div className={`modal-status ${claimMsg.error ? "error" : ""}`}>{claimMsg.text}</div>
@@ -638,6 +749,76 @@ export function PortfolioBody() {
             </div>
             {lockMsg && (
               <div className={`modal-status ${lockMsg.error ? "error" : ""}`}>{lockMsg.text}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== Stake Modal ===== */}
+      {stakeTarget && (
+        <div className="modal-overlay" onClick={() => setStakeTarget(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h3>Stake {stakeTarget.kind === "locked" ? "Locked LP" : "LP Position"}</h3>
+            <p className="dim" style={{ marginBottom: 8 }}>
+              {stakeTarget.entry.symbolA}/{stakeTarget.entry.symbolB} —{" "}
+              {stakeTarget.entry.shares.toString()} shares
+            </p>
+
+            <div className="lock-warning">
+              <strong>Stake-wrapper transferability:</strong>
+              <ul>
+                <li>The stake wrapper is a freely transferable Aptos object. Whoever owns it can claim emission rewards, claim LP fees, and unstake the underlying LP — including any remaining locked time.</li>
+                <li>Per-staker reward depends only on your shares and the pool's <code>lp_supply</code>; it does not change as other stakers join or leave the same reward pool.</li>
+                <li>Pool emission scales with adoption: <code>rate = total_staked / pool.lp_supply × max_rate_per_sec</code>. If LPs add liquidity but do not stake, your share of the rate decreases.</li>
+                {stakeTarget.kind === "locked" && (
+                  <li>Locked LP earns at the same per-share rate as naked LP. The locker time-gate continues to apply: the inner position cannot exit before <code>unlock_at_seconds</code>, regardless of staking state.</li>
+                )}
+              </ul>
+            </div>
+
+            <label className="lock-label">
+              Reward pool
+              {loadingStakePools ? (
+                <div className="dim" style={{ fontSize: 12 }}>Loading reward pools…</div>
+              ) : stakablePools.length === 0 ? (
+                <div className="dim" style={{ fontSize: 12 }}>
+                  No reward pools for this Darbitex pool yet. Create one on the Staking page.
+                </div>
+              ) : (
+                <select
+                  className="lock-input"
+                  value={stakeRewardPool}
+                  onChange={(e) => setStakeRewardPool(e.target.value)}
+                >
+                  <option value="">Select a reward pool…</option>
+                  {stakablePools.map((p) => (
+                    <option key={p.addr} value={p.addr}>
+                      {p.rewardSymbol} rewards ({p.addr.slice(0, 10)}…)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+
+            <label className="lock-checkbox">
+              <input type="checkbox" checked={stakeAgreed}
+                onChange={(e) => setStakeAgreed(e.target.checked)} />
+              I understand the stake wrapper carries all economic rights to its owner.
+            </label>
+
+            <div className="lp-actions" style={{ marginTop: 12 }}>
+              <button type="button" className="btn btn-primary"
+                disabled={!stakeRewardPool || !stakeAgreed || staking}
+                onClick={submitStake}
+              >
+                {staking ? "Staking…" : "Stake"}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setStakeTarget(null)}>
+                Cancel
+              </button>
+            </div>
+            {stakeMsg && (
+              <div className={`modal-status ${stakeMsg.error ? "error" : ""}`}>{stakeMsg.text}</div>
             )}
           </div>
         </div>

@@ -28,18 +28,19 @@ const DisperseBody = lazy(() =>
   import("./pages/Disperse").then((m) => ({ default: m.DisperseBody })),
 );
 
-const OneShell = lazy(() => import("./pages/One").then((m) => ({ default: m.OneShell })));
-const OneOverview = lazy(() =>
-  import("./pages/one/Overview").then((m) => ({ default: m.OneOverview })),
+const DShell = lazy(() => import("./pages/D").then((m) => ({ default: m.DShell })));
+const DOverview = lazy(() =>
+  import("./pages/d/Overview").then((m) => ({ default: m.DOverview })),
 );
-const OneTrove = lazy(() => import("./pages/one/Trove").then((m) => ({ default: m.OneTrove })));
-const OneSp = lazy(() => import("./pages/one/Sp").then((m) => ({ default: m.OneSp })));
-const OneRedeem = lazy(() => import("./pages/one/Redeem").then((m) => ({ default: m.OneRedeem })));
-const OneLiquidate = lazy(() =>
-  import("./pages/one/Liquidate").then((m) => ({ default: m.OneLiquidate })),
+const DTrove = lazy(() => import("./pages/d/Trove").then((m) => ({ default: m.DTrove })));
+const DSp = lazy(() => import("./pages/d/Sp").then((m) => ({ default: m.DSp })));
+const DDonate = lazy(() => import("./pages/d/Donate").then((m) => ({ default: m.DDonate })));
+const DRedeem = lazy(() => import("./pages/d/Redeem").then((m) => ({ default: m.DRedeem })));
+const DLiquidate = lazy(() =>
+  import("./pages/d/Liquidate").then((m) => ({ default: m.DLiquidate })),
 );
-const OneAbout = lazy(() =>
-  import("./pages/one/About").then((m) => ({ default: m.OneAbout })),
+const DAbout = lazy(() =>
+  import("./pages/d/About").then((m) => ({ default: m.DAbout })),
 );
 
 const AboutPage = lazy(() => import("./pages/About").then((m) => ({ default: m.AboutPage })));
@@ -79,13 +80,14 @@ export function App() {
               <Route path="disperse" element={wrap(<DisperseBody />)} />
             </Route>
 
-            <Route path="one" element={wrap(<OneShell />)}>
-              <Route index element={wrap(<OneOverview />)} />
-              <Route path="trove" element={wrap(<OneTrove />)} />
-              <Route path="sp" element={wrap(<OneSp />)} />
-              <Route path="redeem" element={wrap(<OneRedeem />)} />
-              <Route path="liquidate" element={wrap(<OneLiquidate />)} />
-              <Route path="about" element={wrap(<OneAbout />)} />
+            <Route path="d" element={wrap(<DShell />)}>
+              <Route index element={wrap(<DOverview />)} />
+              <Route path="trove" element={wrap(<DTrove />)} />
+              <Route path="sp" element={wrap(<DSp />)} />
+              <Route path="donate" element={wrap(<DDonate />)} />
+              <Route path="redeem" element={wrap(<DRedeem />)} />
+              <Route path="liquidate" element={wrap(<DLiquidate />)} />
+              <Route path="about" element={wrap(<DAbout />)} />
             </Route>
 
             <Route path="about" element={wrap(<AboutPage />)} />

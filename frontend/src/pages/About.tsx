@@ -49,7 +49,7 @@ export function AboutPage() {
       }
 
       // Fetch Pool resource + FA metadata for every pool returned by the
-      // factory. Live discovery — new permissionless pools (ONE, DARBITEX,
+      // factory. Live discovery — new permissionless pools (D, DARBITEX,
       // custom pairs) appear here without any frontend redeploy.
       const snapshots = await Promise.all(
         addrs.map(async (addr) => {
@@ -202,7 +202,7 @@ export function AboutPage() {
         &mdash; each is an independent on-chain module that composes the core's
         public primitives without requiring any upgrade to the core itself.
         Cross-venue aggregation, flash arbitrage, token creation, time-locked
-        vaults, LP staking, and the ONE stablecoin &mdash; all live on-chain with
+        vaults, LP staking, and the D stablecoin &mdash; all live on-chain with
         zero admin surface, zero servers, and zero backend.
       </p>
 
@@ -210,7 +210,7 @@ export function AboutPage() {
       <p>
         <strong>Counter 1 &mdash; the pool.</strong> A vending machine. You put
         1 APT in, you get the exact amount of USDC the <code>x &times; y = k</code>{" "}
-        curve says you get, minus a 1 bps fee that goes entirely to the LPs who
+        curve says you get, minus a 5 bps fee that goes entirely to the LPs who
         stocked the machine. No opinions, no strategies, no callbacks, no admin.
       </p>
       <p>
@@ -239,7 +239,7 @@ export function AboutPage() {
         Enforced in code, not convention.
       </p>
       <p>
-        The 1 bps swap fee goes 100% to LPs. There is no passive protocol fee slot.
+        The 5 bps swap fee goes 100% to LPs. There is no passive protocol fee slot.
       </p>
 
       <h2 className="section-title">Satellite ecosystem</h2>
@@ -293,12 +293,13 @@ export function AboutPage() {
           Used for protocol-owned liquidity locks.
         </div>
         <div className="about-sat">
-          <strong>ONE &mdash; APT-collateralized stablecoin</strong>
+          <strong>D &mdash; APT-collateralized stablecoin</strong>
           <span className="dim"> &mdash; </span>
-          Retail-first, 1 ONE minimum debt, sealed. Pyth-oracled APT/USD. 200%
+          Retail-first, 0.1 D minimum debt, sealed. Pyth-oracled APT/USD. 200%
           MCR, 150% liquidation threshold, 10% bonus. Stability pool catches
-          liquidations, surplus scrubs the peg. Package{" "}
-          <code>0x85ee9c43…</code>, FA <code>0xee5ebaf6…</code>.
+          liquidations, 10% mint+redeem fees agnostically donated to SP, 90% to
+          keyed depositors. Permissionless donate_to_sp + donate_to_reserve.
+          Package <code>0x587c8084…</code>, FA <code>0x9015d5a6…</code>.
         </div>
       </div>
 
@@ -445,7 +446,7 @@ export function AboutPage() {
 
       <h2 className="section-title">Universal flash loans</h2>
       <p>
-        Every pool supports flash loans at 1 bps. Flash receipts are hot-potato
+        Every pool supports flash loans at 5 bps. Flash receipts are hot-potato
         structs &mdash; no abilities, must be consumed by <code>flash_repay</code>{" "}
         in the same transaction or the tx aborts.{" "}
         <code>close_triangle_flash</code> uses this internally for zero-capital
@@ -461,7 +462,7 @@ export function AboutPage() {
       </p>
       <p>
         Each satellite has its own audit trail (R1 minimum, 5 auditors each). The
-        Token Vault, Token Factory, and ONE are permanently frozen on-chain after
+        Token Vault, Token Factory, and D are permanently frozen on-chain after
         passing audit.
       </p>
       <p className="mute">Audits are aids, not guarantees. Read the code.</p>
@@ -494,21 +495,52 @@ export function AboutPage() {
       <p>
         <strong>1. POC proven.</strong> The core AMM, smart routing, flash arbitrage,
         cross-venue aggregation, token factory, vault, LP staking, LP locker, and
-        the ONE stablecoin are all deployed and verified on Aptos mainnet. This
+        the D stablecoin are all deployed and verified on Aptos mainnet. This
         milestone is complete.
       </p>
       <p>
         <strong>2. Treasury bootstrap.</strong> When the treasury accumulates{" "}
         <strong>200 APT</strong> from organic protocol fees (the 10% surplus charge +
         satellite creation fees), those funds bootstrap the initial{" "}
-        <strong>ONE/DARBITEX</strong> liquidity pool on Darbitex itself, seeded with{" "}
-        <strong>99 ONE / 99 DARBITEX</strong>.
+        <strong>D/DARBITEX</strong> liquidity pool on Darbitex itself, seeded with{" "}
+        <strong>99 D / 99M DARBITEX</strong>.
       </p>
       <p>
         <strong>3. LP staking activation.</strong> Once the liquidity pool exists, LP
-        staking reward pools go live with DARBITEX as the reward token. LP providers
-        who stake earn DARBITEX. The protocol's own trading fees continuously refill
-        the treasury, which continuously funds LP staking rewards.
+        staking reward pools go live with all of remaining total supply{" "}
+        <strong>900M DARBITEX</strong> as the reward token, max rate{" "}
+        <strong>10 per second</strong>. LP providers who stake their D/DARBITEX LP
+        tokens earn DARBITEX.
+      </p>
+      <p style={{ marginLeft: 18 }}>
+        <strong>LP staking formula (C-variant adoption emission).</strong> The pool
+        emits at a rate proportional to how much of the underlying LP supply is
+        actually staked. Concretely:
+      </p>
+      <p style={{ marginLeft: 18 }}>
+        <code>emission_per_sec = total_staked / pool.lp_supply &times; max_rate_per_sec</code>
+      </p>
+      <p style={{ marginLeft: 18 }}>
+        At 100% LP adoption (every LP token in the pool is staked) the pool pays
+        out the full 10 DARBITEX/sec. At 50% adoption it pays 5/sec, at 1% it pays
+        0.1/sec, and at 0% it pays nothing &mdash; emission only flows when LPs
+        stake, so unspent runway never burns. This bounds the maximum emission at
+        the design rate but lets adoption decide the actual rate without any
+        admin lever.
+      </p>
+      <p style={{ marginLeft: 18 }}>
+        <strong>Per-staker share is independent of how many others stake.</strong>{" "}
+        Your reward at time <em>t</em> is{" "}
+        <code>(your_staked / pool.lp_supply) &times; max_rate_per_sec &times; dt</code>
+        . When more stakers join, total emission rises proportionally &mdash; your
+        share does NOT dilute. The formula is decimal-agnostic; max_rate_per_sec
+        is denominated in raw reward-token units.
+      </p>
+      <p style={{ marginLeft: 18 }}>
+        <strong>Runway.</strong> 900M DARBITEX at 10/sec = ~1042 days (~2.85 years)
+        of full-saturation emission. Realistic adoption will stretch this many
+        multiples longer. The protocol's own trading fees continuously refill the
+        treasury for future programs.
       </p>
 
       <h2 className="section-title">Disclaimer</h2>
@@ -525,7 +557,7 @@ export function AboutPage() {
         </p>
         <p>
           Smart contracts may contain undiscovered bugs. Funds deposited into pools,
-          vaults, staking contracts, troves, the ONE stability pool, or any other
+          vaults, staking contracts, troves, the D stability pool, or any other
           on-chain component <strong>may be lost permanently</strong>.
         </p>
         <p>

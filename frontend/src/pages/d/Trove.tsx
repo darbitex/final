@@ -1,19 +1,19 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ONE_PACKAGE, ONE_PARAMS, TOKENS } from "../../config";
+import { D_PACKAGE, D_PARAMS, TOKENS } from "../../config";
 import { useFaBalance } from "../../chain/balance";
 import {
-  oneCloseCost,
-  onePrice8dec,
-  oneTroveHealth,
-} from "../../chain/one";
-import { decodeOneError } from "../../chain/oneErrors";
-import { formatApt, formatAptUsd, formatCrBps, formatOne } from "../../chain/oneFormat";
+  dCloseCost,
+  dPrice8dec,
+  dTroveHealth,
+} from "../../chain/d";
+import { decodeDError } from "../../chain/dErrors";
+import { formatApt, formatAptUsd, formatCrBps, formatD } from "../../chain/dFormat";
 import { fetchAptUsdVaa } from "../../chain/pyth";
 import { createRpcPool, fromRaw, toRaw } from "../../chain/rpc-pool";
 import { useAddress } from "../../wallet/useConnect";
 
-const rpc = createRpcPool("one-trove");
+const rpc = createRpcPool("d-trove");
 
 type TroveState = {
   collateral: bigint;
@@ -23,13 +23,13 @@ type TroveState = {
   closeCost: bigint;
 };
 
-export function OneTrove() {
+export function DTrove() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
   const apt = TOKENS.APT;
-  const one = TOKENS.ONE;
+  const d = TOKENS.D;
   const aptBal = useFaBalance(apt.meta, apt.decimals);
-  const oneBal = useFaBalance(one.meta, one.decimals);
+  const dBal = useFaBalance(d.meta, d.decimals);
 
   const [state, setState] = useState<TroveState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,18 +55,18 @@ export function OneTrove() {
     (async () => {
       try {
         const [health, priceRaw] = await Promise.all([
-          oneTroveHealth(rpc, address),
-          onePrice8dec(rpc),
+          dTroveHealth(rpc, address),
+          dPrice8dec(rpc),
         ]);
         let closeCost = 0n;
         if (health.debt > 0n) {
-          closeCost = await oneCloseCost(rpc, address);
+          closeCost = await dCloseCost(rpc, address);
         }
         if (!cancelled) {
           setState({ ...health, priceRaw, closeCost });
         }
       } catch (e) {
-        if (!cancelled) setError(decodeOneError(e));
+        if (!cancelled) setError(decodeDError(e));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -84,14 +84,14 @@ export function OneTrove() {
     const debtNum = Number(debtAmt);
     if (!Number.isFinite(collNum) || collNum <= 0) return null;
     if (!Number.isFinite(debtNum) || debtNum <= 0) return null;
-    const collRaw = toRaw(collNum, ONE_PARAMS.APT_DECIMALS);
-    const debtRaw = toRaw(debtNum, ONE_PARAMS.ONE_DECIMALS);
+    const collRaw = toRaw(collNum, D_PARAMS.APT_DECIMALS);
+    const debtRaw = toRaw(debtNum, D_PARAMS.D_DECIMALS);
     const newColl = state.collateral + collRaw;
     const newDebt = state.debt + debtRaw;
     if (newDebt === 0n) return null;
     const collUsdRaw = (newColl * state.priceRaw) / 100_000_000n;
     const crBps = (collUsdRaw * 10_000n) / newDebt;
-    const feeRaw = (debtRaw * BigInt(ONE_PARAMS.FEE_BPS)) / 10_000n;
+    const feeRaw = (debtRaw * BigInt(D_PARAMS.FEE_BPS)) / 10_000n;
     const netMint = debtRaw - feeRaw;
     return { newColl, newDebt, crBps, netMint, feeRaw };
   }, [collAmt, debtAmt, state]);
@@ -108,11 +108,11 @@ export function OneTrove() {
     resetMsgs();
     try {
       const vaa = await fetchAptUsdVaa();
-      const collRaw = toRaw(Number(collAmt), ONE_PARAMS.APT_DECIMALS);
-      const debtRaw = toRaw(Number(debtAmt), ONE_PARAMS.ONE_DECIMALS);
+      const collRaw = toRaw(Number(collAmt), D_PARAMS.APT_DECIMALS);
+      const debtRaw = toRaw(Number(debtAmt), D_PARAMS.D_DECIMALS);
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::open_trove_pyth`,
+          function: `${D_PACKAGE}::D::open_trove_pyth`,
           typeArguments: [],
           functionArguments: [collRaw.toString(), debtRaw.toString(), vaa],
         },
@@ -121,10 +121,10 @@ export function OneTrove() {
       setCollAmt("");
       setDebtAmt("");
       aptBal.refresh();
-      oneBal.refresh();
+      dBal.refresh();
       refresh();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -139,10 +139,10 @@ export function OneTrove() {
     setAction("add");
     resetMsgs();
     try {
-      const collRaw = toRaw(n, ONE_PARAMS.APT_DECIMALS);
+      const collRaw = toRaw(n, D_PARAMS.APT_DECIMALS);
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::add_collateral`,
+          function: `${D_PACKAGE}::D::add_collateral`,
           typeArguments: [],
           functionArguments: [collRaw.toString()],
         },
@@ -152,7 +152,7 @@ export function OneTrove() {
       aptBal.refresh();
       refresh();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -167,17 +167,17 @@ export function OneTrove() {
     try {
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::close_trove`,
+          function: `${D_PACKAGE}::D::close_trove`,
           typeArguments: [],
           functionArguments: [],
         },
       });
       setLastTx(result.hash);
       aptBal.refresh();
-      oneBal.refresh();
+      dBal.refresh();
       refresh();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -201,8 +201,8 @@ export function OneTrove() {
           </div>
           <div className="protocol-card small">
             <div className="protocol-label">Debt</div>
-            <div className="protocol-big">{formatOne(state.debt)}</div>
-            <div className="protocol-note">ONE</div>
+            <div className="protocol-big">{formatD(state.debt)}</div>
+            <div className="protocol-note">D</div>
           </div>
           <div className="protocol-card small">
             <div className="protocol-label">Collateral ratio</div>
@@ -212,9 +212,9 @@ export function OneTrove() {
                 color:
                   state.debt === 0n
                     ? "#888"
-                    : state.crBps < BigInt(ONE_PARAMS.LIQ_THRESHOLD_BPS)
+                    : state.crBps < BigInt(D_PARAMS.LIQ_THRESHOLD_BPS)
                       ? "#ff6b6b"
-                      : state.crBps < BigInt(ONE_PARAMS.MCR_BPS)
+                      : state.crBps < BigInt(D_PARAMS.MCR_BPS)
                         ? "#ff8800"
                         : "#6eff8e",
               }}
@@ -222,7 +222,7 @@ export function OneTrove() {
               {formatCrBps(state.crBps)}
             </div>
             <div className="protocol-note">
-              MCR {ONE_PARAMS.MCR_BPS / 100}% · LIQ {ONE_PARAMS.LIQ_THRESHOLD_BPS / 100}%
+              MCR {D_PARAMS.MCR_BPS / 100}% · LIQ {D_PARAMS.LIQ_THRESHOLD_BPS / 100}%
             </div>
           </div>
           <div className="protocol-card small">
@@ -237,7 +237,7 @@ export function OneTrove() {
       <p className="page-sub">
         {hasTrove
           ? "Adding collateral + debt in one call (routes through open_trove_pyth; impl merges into your existing position)."
-          : "Deposit APT as collateral, mint ONE as debt. MCR 200%. 1% flat mint fee burned (or scrubbed via SP)."}
+          : "Deposit APT as collateral, mint D as debt. MCR 200%. 1% flat mint fee, 10/90 split: 10% to SP pool, 90% to keyed SP depositors."}
       </p>
 
       <div className="card" style={{ padding: 16 }}>
@@ -262,11 +262,11 @@ export function OneTrove() {
           </button>
         </div>
         <div className="swap-row">
-          <label>Debt to mint (ONE)</label>
+          <label>Debt to mint (D)</label>
           <div className="swap-input">
             <input
               type="number"
-              placeholder={`≥ ${fromRaw(ONE_PARAMS.MIN_DEBT_RAW, ONE_PARAMS.ONE_DECIMALS)}`}
+              placeholder={`≥ ${fromRaw(D_PARAMS.MIN_DEBT_RAW, D_PARAMS.D_DECIMALS)}`}
               min="0"
               value={debtAmt}
               onChange={(e) => setDebtAmt(e.target.value)}
@@ -277,9 +277,9 @@ export function OneTrove() {
         {projected && (
           <div className="hint">
             Projected: {formatApt(projected.newColl)} APT collateral /{" "}
-            {formatOne(projected.newDebt)} ONE debt · CR {formatCrBps(projected.crBps)}
-            {" · "}Net mint {formatOne(projected.netMint)} ONE (fee{" "}
-            {formatOne(projected.feeRaw, 6)})
+            {formatD(projected.newDebt)} D debt · CR {formatCrBps(projected.crBps)}
+            {" · "}Net mint {formatD(projected.netMint)} D (fee{" "}
+            {formatD(projected.feeRaw, 6)})
           </div>
         )}
 
@@ -315,7 +315,7 @@ export function OneTrove() {
         <>
           <h2 className="section-title">Add collateral only</h2>
           <p className="page-sub">
-            Top up CR without minting more ONE. No oracle refresh needed.
+            Top up CR without minting more D. No oracle refresh needed.
           </p>
           <div className="card" style={{ padding: 16 }}>
             <div className="swap-row">
@@ -351,15 +351,15 @@ export function OneTrove() {
 
           <h2 className="section-title">Close trove</h2>
           <p className="page-sub">
-            Burn your full debt (ONE in wallet) and withdraw all collateral. Note:
+            Burn your full debt (D in wallet) and withdraw all collateral. Note:
             the 1% fee was charged at mint time, so you received{" "}
             <code>debt − 1%</code> but need <code>debt</code> to close — source the
             gap from secondary market or SP withdraw.
           </p>
           <div className="card" style={{ padding: 16 }}>
             <div className="hint">
-              ONE to burn: {formatOne(state?.closeCost ?? 0n)} · Your ONE balance:{" "}
-              {oneBal.loading ? "…" : oneBal.formatted.toFixed(4)}
+              D to burn: {formatD(state?.closeCost ?? 0n)} · Your D balance:{" "}
+              {dBal.loading ? "…" : dBal.formatted.toFixed(4)}
             </div>
             {error && action === "close" && <div className="err">{error}</div>}
             <button
@@ -369,15 +369,15 @@ export function OneTrove() {
                 submitting ||
                 !state ||
                 state.closeCost === 0n ||
-                oneBal.raw < state.closeCost
+                dBal.raw < state.closeCost
               }
               onClick={submitClose}
             >
               {submitting && action === "close" ? "Submitting…" : "Close trove"}
             </button>
-            {state && oneBal.raw < state.closeCost && (
+            {state && dBal.raw < state.closeCost && (
               <div className="err">
-                Need {formatOne(state.closeCost - oneBal.raw)} more ONE in wallet to close.
+                Need {formatD(state.closeCost - dBal.raw)} more D in wallet to close.
               </div>
             )}
           </div>

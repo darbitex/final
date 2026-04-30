@@ -1,6 +1,6 @@
 [package]
 name = "DarbitexFinal"
-version = "0.2.0"
+version = "0.3.0"
 upgrade_policy = "compatible"
 authors = ["Rera", "Claude (Anthropic)"]
 license = "Unlicense"

@@ -12,9 +12,10 @@ const rpc = createRpcPool("staking");
 type StakeEntry = {
   addr: string;
   rewardPoolAddr: string;
-  positionAddr: string;
+  sourceAddr: string;
   shares: number;
   pending: number;
+  lockedVariant: boolean;
   rewardSymbol: string;
   rewardDecimals: number;
   poolAddr: string;
@@ -26,10 +27,12 @@ type PoolEntry = {
   rewardToken: string;
   rewardSymbol: string;
   maxRate: number;
-  stakeTarget: number;
   totalStaked: number;
   rewardBalance: number;
+  committed: number;
   rewardDecimals: number;
+  stakedFractionBps: number;
+  emissionRatePerSec: number;
 };
 
 function resolveToken(meta: string): { symbol: string; decimals: number } {
@@ -190,14 +193,14 @@ async function fetchUserStakes(owner: string): Promise<StakeEntry[]> {
     const addr = obj.object_address;
     if (!addr) continue;
     try {
-      const [rewardPoolAddr, positionAddr, sharesRaw] =
-        await rpc.rotatedView<[string, string, string]>({
+      const [rewardPoolAddr, sourceAddr, sharesRaw, lockedVariant] =
+        await rpc.rotatedView<[string, string, string, boolean]>({
           function: `${STAKING_PACKAGE}::staking::stake_info`,
           typeArguments: [],
           functionArguments: [addr],
         });
 
-      const [poolAddr, rewardToken, , , ,] =
+      const [poolAddr, rewardToken] =
         await rpc.rotatedView<[string, string, string, string, string, string]>({
           function: `${STAKING_PACKAGE}::staking::reward_pool_info`,
           typeArguments: [],
@@ -214,9 +217,10 @@ async function fetchUserStakes(owner: string): Promise<StakeEntry[]> {
       results.push({
         addr,
         rewardPoolAddr,
-        positionAddr,
+        sourceAddr,
         shares: Number(sharesRaw),
         pending: fromRaw(pendingRaw[0], rwd.decimals),
+        lockedVariant: Boolean(lockedVariant),
         rewardSymbol: rwd.symbol,
         rewardDecimals: rwd.decimals,
         poolAddr,
@@ -254,12 +258,22 @@ async function fetchRewardPools(): Promise<PoolEntry[]> {
         reward_token: string;
       };
       try {
-        const [poolAddr, rewardToken, maxRateRaw, stakeTargetRaw, totalStakedRaw, rewardBalRaw] =
+        const [poolAddr, rewardToken, maxRateRaw, totalStakedRaw, physRaw, committedRaw] =
           await rpc.rotatedView<[string, string, string, string, string, string]>({
             function: `${STAKING_PACKAGE}::staking::reward_pool_info`,
             typeArguments: [],
             functionArguments: [d.reward_pool_addr],
           });
+        const [fractionRaw] = await rpc.rotatedView<[string]>({
+          function: `${STAKING_PACKAGE}::staking::staked_fraction_bps`,
+          typeArguments: [],
+          functionArguments: [d.reward_pool_addr],
+        });
+        const [emissionRaw] = await rpc.rotatedView<[string]>({
+          function: `${STAKING_PACKAGE}::staking::current_emission_rate_per_sec`,
+          typeArguments: [],
+          functionArguments: [d.reward_pool_addr],
+        });
         const rwd = resolveToken(rewardToken);
         results.push({
           addr: d.reward_pool_addr,
@@ -267,10 +281,12 @@ async function fetchRewardPools(): Promise<PoolEntry[]> {
           rewardToken,
           rewardSymbol: rwd.symbol,
           maxRate: fromRaw(maxRateRaw, rwd.decimals),
-          stakeTarget: Number(stakeTargetRaw),
           totalStaked: Number(totalStakedRaw),
-          rewardBalance: fromRaw(rewardBalRaw, rwd.decimals),
+          rewardBalance: fromRaw(physRaw, rwd.decimals),
+          committed: fromRaw(committedRaw, rwd.decimals),
           rewardDecimals: rwd.decimals,
+          stakedFractionBps: Number(fractionRaw),
+          emissionRatePerSec: fromRaw(emissionRaw, rwd.decimals),
         });
       } catch {
         // pool may not exist anymore
@@ -365,7 +381,6 @@ export function StakingBody() {
   const rewardToken = useTokenSelector("APT");
   const rewardTokenBal = useFaBalance(rewardToken.getTokenMeta(), rewardToken.getDecimals());
   const [createMaxRate, setCreateMaxRate] = useState("");
-  const [createStakeTarget, setCreateStakeTarget] = useState("");
 
   // Deposit rewards state
   const [depositPoolAddr, setDepositPoolAddr] = useState("");
@@ -425,14 +440,15 @@ export function StakingBody() {
     }
   }, [signAndSubmitTransaction, loadData]);
 
-  const handleUnstake = useCallback(async (stakeAddr: string) => {
+  const handleUnstake = useCallback(async (stake: StakeEntry) => {
     setMsg(null);
     try {
+      const fn = stake.lockedVariant ? "unstake_locked" : "unstake_naked";
       const r = await signAndSubmitTransaction({
         data: {
-          function: `${STAKING_PACKAGE}::staking::unstake_lp`,
+          function: `${STAKING_PACKAGE}::staking::${fn}`,
           typeArguments: [],
-          functionArguments: [stakeAddr],
+          functionArguments: [stake.addr],
         },
       });
       setMsg({ text: `Unstaked: ${r.hash.slice(0, 12)}\u2026`, error: false });
@@ -456,8 +472,7 @@ export function StakingBody() {
     const rewardMeta = rewardToken.getTokenMeta();
     const rewardDecimals = rewardToken.getDecimals();
     const maxRateRaw = Math.floor(Number(createMaxRate) * 10 ** rewardDecimals);
-    const stakeTargetRaw = Number(createStakeTarget);
-    if (!poolAddr || !rewardMeta || !maxRateRaw || !stakeTargetRaw || !address) return;
+    if (!poolAddr || !rewardMeta || !maxRateRaw || !address) return;
     setMsg(null);
     try {
       const r = await signAndSubmitTransaction({
@@ -468,18 +483,16 @@ export function StakingBody() {
             poolAddr,
             rewardMeta,
             maxRateRaw.toString(),
-            stakeTargetRaw.toString(),
           ],
         },
       });
       setMsg({ text: `Pool created: ${r.hash.slice(0, 12)}\u2026`, error: false });
       setCreateMaxRate("");
-      setCreateStakeTarget("");
       loadData();
     } catch (e) {
       setMsg({ text: (e as Error).message, error: true });
     }
-  }, [address, getSelectedPoolAddr, rewardToken, createMaxRate, createStakeTarget, signAndSubmitTransaction, loadData]);
+  }, [address, getSelectedPoolAddr, rewardToken, createMaxRate, signAndSubmitTransaction, loadData]);
 
   const handleDepositRewards = useCallback(async () => {
     const pool = pools.find((p) => p.addr === depositPoolAddr);
@@ -531,17 +544,19 @@ export function StakingBody() {
           <div className="dim" style={{ fontSize: 12 }}>No reward pools yet.</div>
         ) : (
           <div className="vault-directory">
-            <div className="vault-dir-header" style={{ gridTemplateColumns: "1fr 1fr 1fr 80px" }}>
+            <div className="vault-dir-header" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 80px" }}>
               <span>Pool</span>
               <span>Reward</span>
-              <span>Staked</span>
+              <span>Staked %</span>
+              <span>Emit/sec</span>
               <span>Balance</span>
             </div>
             {pools.map((p) => (
-              <div key={p.addr} className="vault-dir-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 80px" }}>
+              <div key={p.addr} className="vault-dir-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 80px" }}>
                 <span><strong>{resolvePoolLabel(p.poolAddr)}</strong></span>
                 <span>{p.rewardSymbol}</span>
-                <span>{p.totalStaked.toLocaleString()}</span>
+                <span>{(p.stakedFractionBps / 100).toFixed(2)}%</span>
+                <span>{fmtAmount(p.emissionRatePerSec)}</span>
                 <span>{fmtAmount(p.rewardBalance)}</span>
               </div>
             ))}
@@ -559,6 +574,9 @@ export function StakingBody() {
                 <strong>{s.shares.toLocaleString()} shares</strong>
                 <span className="dim">
                   {resolvePoolLabel(s.poolAddr)}
+                  {s.lockedVariant && (
+                    <span style={{ color: "#ff8800", marginLeft: 6, fontSize: 11 }}>· locked LP</span>
+                  )}
                 </span>
                 {s.pending > 0 && (
                   <span style={{ color: "#00cc55", fontSize: 11 }}>
@@ -582,7 +600,7 @@ export function StakingBody() {
                 </button>
                 <button
                   className="btn btn-secondary"
-                  onClick={() => handleUnstake(s.addr)}
+                  onClick={() => handleUnstake(s)}
                 >
                   Unstake
                 </button>
@@ -692,7 +710,7 @@ export function StakingBody() {
             </div>
           )}
           <label className="lock-label">
-            Max rate (reward tokens per second at full capacity)
+            Max rate (reward tokens per second at 100% staked)
             <input
               className="lock-input"
               type="number"
@@ -701,24 +719,16 @@ export function StakingBody() {
               onChange={(e) => setCreateMaxRate(e.target.value)}
             />
           </label>
-          <label className="lock-label">
-            Stake target (LP shares for full emission rate)
-            <input
-              className="lock-input"
-              type="number"
-              placeholder="1000000"
-              value={createStakeTarget}
-              onChange={(e) => setCreateStakeTarget(e.target.value)}
-            />
-          </label>
-          <div style={{ marginTop: 10, fontSize: 12 }}>
-            <span className="dim">Fee:</span> <strong>1 APT</strong>
+          <div style={{ marginTop: 10, fontSize: 11, color: "#888", lineHeight: 1.5 }}>
+            Emission scales with adoption: <code>rate = total_staked / pool.lp_supply × max_rate_per_sec</code>.
+            No stake-target knob, no creation fee. Per-staker share is independent of how many others stake;
+            the formula is decimal-agnostic — choose <code>max_rate_per_sec</code> in raw reward-token units.
           </div>
           <button
             className="btn btn-primary"
             style={{ width: "100%", marginTop: 12 }}
             disabled={
-              !getSelectedPoolAddr() || !createMaxRate || !createStakeTarget ||
+              !getSelectedPoolAddr() || !createMaxRate ||
               (rewardToken.tokenKey === CUSTOM_KEY && !rewardToken.customInfo)
             }
             onClick={handleCreateRewardPool}

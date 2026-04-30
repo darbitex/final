@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { TokenIcon } from "../components/TokenIcon";
 import {
   PACKAGE,
+  POOL_FEE_BPS,
   QUOTE_DEBOUNCE_MS,
   TOKENS,
   TREASURY_BPS,
@@ -97,6 +98,15 @@ export function TradePage() {
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Reserves of the canonical direct pool for the in/out pair, used to
+  // compute spot rate (= price as input → 0). Set alongside the direct
+  // quote so the spot reference and the executed quote are read from the
+  // same on-chain snapshot.
+  const [directReserves, setDirectReserves] = useState<{
+    inRaw: bigint;
+    outRaw: bigint;
+  } | null>(null);
+
   // Warm external venue registries once per mount — they no-op on
   // subsequent calls.
   useEffect(() => {
@@ -108,6 +118,7 @@ export function TradePage() {
   useEffect(() => {
     setRows([]);
     setError(null);
+    setDirectReserves(null);
     const numeric = Number(amountIn);
     if (!Number.isFinite(numeric) || numeric <= 0) return;
     if (tokenIn.meta === tokenOut.meta) {
@@ -130,11 +141,30 @@ export function TradePage() {
           if (!poolAddr || /^0x0+$/.test(String(poolAddr))) {
             return { pools: [] as string[], outRaw: 0n };
           }
-          const [outStr] = await rpc.viewFn<[string]>(
-            "arbitrage::quote_path",
-            [],
-            [[poolAddr], tokenIn.meta, amountRaw.toString()],
-          );
+          // Fetch quote + reserves in parallel. Reserves drive the spot-rate
+          // hint; quote_path is the executable price for this exact size.
+          const [[outStr], poolRes] = await Promise.all([
+            rpc.viewFn<[string]>(
+              "arbitrage::quote_path",
+              [],
+              [[poolAddr], tokenIn.meta, amountRaw.toString()],
+            ),
+            rpc.rotatedGetResource<{
+              reserve_a: string | number;
+              reserve_b: string | number;
+              metadata_a: { inner: string };
+              metadata_b: { inner: string };
+            }>(String(poolAddr), `${PACKAGE}::pool::Pool`),
+          ]);
+          if (!cancelled) {
+            const ra = BigInt(String(poolRes.reserve_a ?? "0"));
+            const rb = BigInt(String(poolRes.reserve_b ?? "0"));
+            const aIsIn = poolRes.metadata_a.inner.toLowerCase() === tokenIn.meta.toLowerCase();
+            setDirectReserves({
+              inRaw: aIsIn ? ra : rb,
+              outRaw: aIsIn ? rb : ra,
+            });
+          }
           return { pools: [String(poolAddr)], outRaw: BigInt(outStr ?? "0") };
         })
         .catch((e: Error) => ({
@@ -240,6 +270,65 @@ export function TradePage() {
     const cut = (amount * BigInt(TREASURY_BPS)) / 10_000n;
     return { amount, cut };
   }, [best, rows]);
+
+  // Decimal-scaled spot rate from direct-pool reserves: 1 In = X Out at zero
+  // input size. Reference price for impact calc; matches the reserve snapshot
+  // the executable quote was read from.
+  const spotPerIn = useMemo(() => {
+    if (!directReserves) return null;
+    if (directReserves.inRaw === 0n || directReserves.outRaw === 0n) return null;
+    const inDec = Number(directReserves.inRaw) / 10 ** tokenIn.decimals;
+    const outDec = Number(directReserves.outRaw) / 10 ** tokenOut.decimals;
+    return outDec / inDec;
+  }, [directReserves, tokenIn.decimals, tokenOut.decimals]);
+
+  const effectivePerIn = useMemo(() => {
+    if (!best || best.outRaw === 0n) return null;
+    const numeric = Number(amountIn);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    const aOut = Number(best.outRaw) / 10 ** tokenOut.decimals;
+    return aOut / numeric;
+  }, [best, amountIn, tokenOut.decimals]);
+
+  // Price impact = (spot - effective) / spot. Positive ⇒ you pay above spot.
+  // Negative impact (executed BELOW spot) only happens via cross-venue
+  // arbitrage paths; show as is.
+  const priceImpactBps = useMemo(() => {
+    if (spotPerIn === null || effectivePerIn === null || spotPerIn === 0) return null;
+    return Math.round(((spotPerIn - effectivePerIn) / spotPerIn) * 10_000);
+  }, [spotPerIn, effectivePerIn]);
+
+  function impactColor(bps: number | null): string {
+    if (bps === null) return "";
+    if (bps < 30) return "good";
+    if (bps < 100) return "warn";
+    return "bad";
+  }
+
+  const minOutRaw = useMemo(() => {
+    if (!best || best.outRaw === 0n) return 0n;
+    return (best.outRaw * BigInt(Math.floor((1 - slippage) * 1_000_000))) / 1_000_000n;
+  }, [best, slippage]);
+
+  const lpFeeIn = useMemo(() => {
+    const numeric = Number(amountIn);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    if (!best) return null;
+    // Darbitex direct/smart routes: POOL_FEE_BPS per hop. External venues vary —
+    // their adapters bundle the fee in their quote, so we don't double-count;
+    // surface "—" to signal "venue-defined."
+    if (best.kind === "external") return null;
+    const hops = best.kind === "darbitex-direct" ? 1 : Math.max(1, best.pools.length);
+    return numeric * (hops * POOL_FEE_BPS) / 10_000;
+  }, [amountIn, best]);
+
+  function fmtRate(n: number | null, digits: number = 6): string {
+    if (n === null || !Number.isFinite(n)) return "—";
+    if (n === 0) return "0";
+    if (n >= 1_000_000) return n.toExponential(3);
+    if (n < 0.000001) return n.toExponential(3);
+    return n.toFixed(digits);
+  }
 
   async function submitBest() {
     if (!address || !best) return;
@@ -442,6 +531,55 @@ export function TradePage() {
           );
         })}
       </div>
+
+      {best && (
+        <div className="quote-box">
+          <div className="quote-row">
+            <span className="dim">Spot rate</span>
+            <span>
+              {spotPerIn === null
+                ? "—"
+                : `1 ${tokenIn.symbol} = ${fmtRate(spotPerIn)} ${tokenOut.symbol}`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Effective rate</span>
+            <span>
+              {effectivePerIn === null
+                ? "—"
+                : `1 ${tokenIn.symbol} = ${fmtRate(effectivePerIn)} ${tokenOut.symbol}`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Price impact</span>
+            <span className={`impact-${impactColor(priceImpactBps)}`}>
+              {priceImpactBps === null ? "—" : `${(priceImpactBps / 100).toFixed(2)}%`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">
+              LP fee {best.kind === "external" ? "(venue-defined)" : `(${(best.kind === "darbitex-direct" ? 1 : Math.max(1, best.pools.length)) * POOL_FEE_BPS} bps)`}
+            </span>
+            <span>
+              {lpFeeIn === null
+                ? "—"
+                : `${fmtRate(lpFeeIn)} ${tokenIn.symbol}`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Slippage tolerance</span>
+            <span>{(slippage * 100).toFixed(2)}%</span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Min received</span>
+            <span>
+              {minOutRaw === 0n
+                ? "—"
+                : `${fromRaw(minOutRaw, tokenOut.decimals).toFixed(6)} ${tokenOut.symbol}`}
+            </span>
+          </div>
+        </div>
+      )}
 
       {surplus && surplus.amount > 0n && (
         <div className="surplus-note">

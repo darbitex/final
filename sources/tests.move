@@ -481,7 +481,7 @@ module darbitex::tests {
         assert!(fee == 1, 1010);
 
         let fee_large = pool::compute_flash_fee(100_000);
-        assert!(fee_large == 10, 1011);
+        assert!(fee_large == 50, 1011);
     }
 
     // ===== 11. Full lifecycle =====

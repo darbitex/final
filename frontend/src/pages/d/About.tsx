@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { APT_USD_PYTH_FEED, ONE_METADATA, ONE_PACKAGE, ONE_PARAMS } from "../../config";
-import { oneIsSealed, oneReadWarning } from "../../chain/one";
-import { decodeOneError } from "../../chain/oneErrors";
+import { APT_USD_PYTH_FEED, D_METADATA, D_PACKAGE, D_PARAMS } from "../../config";
+import { dIsSealed, dReadWarning } from "../../chain/d";
+import { decodeDError } from "../../chain/dErrors";
 import { createRpcPool } from "../../chain/rpc-pool";
 
 // The on-chain WARNING is a single flat string with 9 numbered points
@@ -47,15 +47,16 @@ function WarningBlock({ raw }: { raw: string }) {
   );
 }
 
-const rpc = createRpcPool("one-about");
+const rpc = createRpcPool("d-about");
 
-// Sealing proof tx — destroy_cap, published 2026-04-24.
-const DESTROY_CAP_TX =
-  "0x529f06dbd5d21ff361e96993545c70a07fb35893024f23155f9daef6b2954fbb";
-const PUBLISH_TX =
-  "0xf087e928dbf8cf4232cb054bc07138efc4c5d4b796368ef96204f6feaecf3126";
+// Sealing proof tx — execute_transaction for destroy_cap, 2026-04-29.
+const DESTROY_CAP_EXEC_SEQ = 625;
+const PUBLISH_EXEC_TX =
+  "0xdadc6b90";
+const MULTISIG =
+  "0x37f781195eb0929e5187ebe95dba5d9ac22859187a0ddca3e5afbc815688b826";
 
-export function OneAbout() {
+export function DAbout() {
   const [warning, setWarning] = useState<string | null>(null);
   const [sealed, setSealed] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -64,13 +65,13 @@ export function OneAbout() {
     let cancelled = false;
     (async () => {
       try {
-        const [w, s] = await Promise.all([oneReadWarning(rpc), oneIsSealed(rpc)]);
+        const [w, s] = await Promise.all([dReadWarning(rpc), dIsSealed(rpc)]);
         if (!cancelled) {
           setWarning(w);
           setSealed(s);
         }
       } catch (e) {
-        if (!cancelled) setErr(decodeOneError(e));
+        if (!cancelled) setErr(decodeDError(e));
       }
     })();
     return () => {
@@ -81,9 +82,11 @@ export function OneAbout() {
   return (
     <>
       <p className="page-sub">
-        ONE is an immutable APT-collateralized stablecoin on Aptos. Retail-first
-        (1 ONE minimum debt, no sorted list, flat 1% fee). Liquity-descendant
-        design, Pyth-oracled, sealed on 2026-04-24.
+        D is an immutable APT-collateralized stablecoin on Aptos. Retail-first
+        (0.1 D minimum debt, no sorted list, flat 1% fee). Liquity-descendant
+        design, Pyth-oracled, sealed on 2026-04-29 via destroy_cap from a 1/5
+        multisig (raised to 3/5 post-seal for governance hygiene only — the
+        ResourceCap is gone, multisig has zero protocol authority).
       </p>
 
       <h2 className="section-title">On-chain WARNING</h2>
@@ -109,30 +112,25 @@ export function OneAbout() {
           <div className="protocol-big" style={{ fontSize: 18 }}>
             0x0…0
           </div>
-          <div className="protocol-note">Package cannot be upgraded</div>
+          <div className="protocol-note">Resource account, no signer cap</div>
         </div>
         <div className="protocol-card small">
-          <div className="protocol-label">Publish tx</div>
+          <div className="protocol-label">Origin multisig</div>
           <div className="protocol-note" style={{ fontSize: 11 }}>
             <a
-              href={`https://explorer.aptoslabs.com/txn/${PUBLISH_TX}?network=mainnet`}
+              href={`https://explorer.aptoslabs.com/account/${MULTISIG}?network=mainnet`}
               target="_blank"
               rel="noopener noreferrer"
             >
-              {PUBLISH_TX.slice(0, 14)}…
+              {MULTISIG.slice(0, 14)}…
             </a>
+            {" · 3/5 (governance hygiene)"}
           </div>
         </div>
         <div className="protocol-card small">
-          <div className="protocol-label">destroy_cap tx (seal)</div>
+          <div className="protocol-label">destroy_cap (seal)</div>
           <div className="protocol-note" style={{ fontSize: 11 }}>
-            <a
-              href={`https://explorer.aptoslabs.com/txn/${DESTROY_CAP_TX}?network=mainnet`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {DESTROY_CAP_TX.slice(0, 14)}…
-            </a>
+            multisig seq {DESTROY_CAP_EXEC_SEQ} · publish tx {PUBLISH_EXEC_TX}…
           </div>
         </div>
       </section>
@@ -145,27 +143,31 @@ export function OneAbout() {
         </div>
         <div className="venue-row">
           <span className="venue-name">MCR (open / augment)</span>
-          <span className="venue-out">{ONE_PARAMS.MCR_BPS / 100}%</span>
+          <span className="venue-out">{D_PARAMS.MCR_BPS / 100}%</span>
         </div>
         <div className="venue-row">
           <span className="venue-name">Liquidation threshold</span>
-          <span className="venue-out">{ONE_PARAMS.LIQ_THRESHOLD_BPS / 100}%</span>
+          <span className="venue-out">{D_PARAMS.LIQ_THRESHOLD_BPS / 100}%</span>
         </div>
         <div className="venue-row">
           <span className="venue-name">Liquidation bonus</span>
-          <span className="venue-out">{ONE_PARAMS.LIQ_BONUS_BPS / 100}%</span>
+          <span className="venue-out">{D_PARAMS.LIQ_BONUS_BPS / 100}%</span>
         </div>
         <div className="venue-row">
           <span className="venue-name">Flat mint + redeem fee</span>
-          <span className="venue-out">{ONE_PARAMS.FEE_BPS / 100}%</span>
+          <span className="venue-out">{D_PARAMS.FEE_BPS / 100}%</span>
+        </div>
+        <div className="venue-row">
+          <span className="venue-name">Fee split (SP pool / keyed depositors)</span>
+          <span className="venue-out">10% / 90%</span>
         </div>
         <div className="venue-row">
           <span className="venue-name">Pyth staleness ceiling</span>
-          <span className="venue-out">{ONE_PARAMS.STALENESS_SECS}s</span>
+          <span className="venue-out">{D_PARAMS.STALENESS_SECS}s</span>
         </div>
         <div className="venue-row">
           <span className="venue-name">Min debt</span>
-          <span className="venue-out">1 ONE</span>
+          <span className="venue-out">0.1 D</span>
         </div>
       </div>
 
@@ -174,23 +176,23 @@ export function OneAbout() {
         <div className="protocol-label">Package</div>
         <div className="protocol-addr">
           <a
-            href={`https://explorer.aptoslabs.com/account/${ONE_PACKAGE}?network=mainnet`}
+            href={`https://explorer.aptoslabs.com/account/${D_PACKAGE}?network=mainnet`}
             target="_blank"
             rel="noopener noreferrer"
           >
-            {ONE_PACKAGE}
+            {D_PACKAGE}
           </a>
         </div>
       </div>
       <div className="protocol-card">
-        <div className="protocol-label">ONE FA metadata</div>
+        <div className="protocol-label">D FA metadata</div>
         <div className="protocol-addr">
           <a
-            href={`https://explorer.aptoslabs.com/fungible_asset/${ONE_METADATA}?network=mainnet`}
+            href={`https://explorer.aptoslabs.com/fungible_asset/${D_METADATA}?network=mainnet`}
             target="_blank"
             rel="noopener noreferrer"
           >
-            {ONE_METADATA}
+            {D_METADATA}
           </a>
         </div>
       </div>

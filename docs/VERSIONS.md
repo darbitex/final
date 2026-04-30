@@ -24,6 +24,27 @@ Multisig: 3/5
 - **Regression:** 25 unit tests (was 1 sanity stub). Full coverage: pool creation, add/remove liquidity, swap, flash loan, fee accrual, entry wrappers, factory views, new views.
 - **Note:** On-chain package metadata still carries `0.1.0` (Move.toml not bumped before compile). Bumped to `0.2.0` locally post-deploy. Next upgrade will carry `0.2.0` on-chain.
 
+## v0.3.0 — 5 bps fee + composability views + WARNING disclosure (2026-04-30)
+
+- **Commit:** TBD (tag `v0.3.0`)
+- **Propose tx:** `0x8bb3a41efc2a0c4cfb09885f2c9c47e836a4635616a485e61b966a94103b6384` (multisig seq 7, proposer 0x0047a3e1, 0.018 APT)
+- **Execute tx:** `0x9d1f8c32d5cbba5a370618c994a84d0d4719af2b0688c4ada94504f1cd042404` (executor 0x0047a3e1, 0.0029 APT, `is_upgrade: True`)
+- **Summary:** Three-item bundle, all ABI-compatible additive changes. (1) Swap + flash fee bumped from 1 bps to 5 bps (100% LP, no protocol cut on swap). (2) Four pre-seal-mandatory composability views added so future satellites (yield aggregator, LP escrow, locker v2, staking v2, marketplace) can compose without further core upgrades. (3) On-chain user-facing risk disclosure (`WARNING` constant + `read_warning()` view), pattern ported from Darbitex Sui — adapted for Aptos: MEV item dropped (Aptos has no public mempool), SLIPPAGE-AND-THIN-LIQUIDITY item added, NO-TREASURY swapped to TREASURY-CUT, SEAL-AT-DEPLOY swapped to UPGRADE-STATUS-COMPATIBLE.
+- **Changes:**
+  - `pool.move:27-28` — `SWAP_FEE_BPS` and `FLASH_FEE_BPS` both `1 → 5`
+  - `pool.move` doc + `arbitrage.move` doc strings updated `1 bps → 5 bps` (3 sites)
+  - `pool.move` new const — `WARNING: vector<u8>` (12 numbered disclosure items, ASCII-only)
+  - `pool.move` new views — `lp_fee_per_share(pool_addr): (u128, u128)`, `position_pool_addr(pos): address`, `position_fee_debt(pos): (u128, u128)`, `position_pending_fees(pos): (u64, u64)`, `read_warning(): vector<u8>`
+  - `tests.move:484` — flash-fee assertion updated `== 10 → == 50` for the 5 bps math
+- **Bytecode size:** 37,621 → 43,794 bytes (+6,173, ~16% from WARNING string).
+- **Sources:** A1 mirrors Supra port v0.2.0 live + 6/6 LLM R1 GREEN (`darbitex-supra` pkg `0x7599baa7…`). B1 mirrors Sui port pre-seal pattern (`darbitex-sui` pkg `0xf4c6b925…`) and Supra port `pool.move:823-873`. WARNING ports the `darbitex-sui::pool::WARNING` pattern with Aptos-specific item swaps.
+- **Stakeholder notification post-execute:**
+  - TWAMM keeper `0x9df06f93…` — fee delta affects `bridge::omni_swap_thala_twamm` cycle math; recalibrate keeper bps thresholds
+  - Arb keeper bots — may abort with `E_MIN_OUT` until per-leg cost model recomputed
+  - Hyperion / Thala / Cellana adapters, aggregator, LP locker, LP staking — pass-through, no change required
+  - Frontend `darbitex.wal.app` — quotes are read live from chain, no change required
+- **Regression:** all 25 existing unit tests must pass post-edit. New views are read-only (no test failure path), but a `position_pending_fees` smoke test is recommended post-publish.
+
 ---
 
 # TWAMM Satellite — Version History

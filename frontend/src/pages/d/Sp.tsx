@@ -1,27 +1,28 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
-import { ONE_PACKAGE, ONE_PARAMS, TOKENS } from "../../config";
+import { D_PACKAGE, D_PARAMS, TOKENS } from "../../config";
 import { useFaBalance } from "../../chain/balance";
-import { oneSpOf, oneTotals, type Totals } from "../../chain/one";
-import { decodeOneError } from "../../chain/oneErrors";
-import { formatApt, formatOne } from "../../chain/oneFormat";
+import { dSpOf, dSpPoolBalance, dTotals, type Totals } from "../../chain/d";
+import { decodeDError } from "../../chain/dErrors";
+import { formatApt, formatD } from "../../chain/dFormat";
 import { createRpcPool, toRaw } from "../../chain/rpc-pool";
 import { useAddress } from "../../wallet/useConnect";
 
-const rpc = createRpcPool("one-sp");
+const rpc = createRpcPool("d-sp");
 
 type SpState = {
   effectiveBalance: bigint;
-  pendingOne: bigint;
+  pendingD: bigint;
   pendingColl: bigint;
   totals: Totals;
+  spPoolRaw: bigint;
 };
 
-export function OneSp() {
+export function DSp() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
-  const one = TOKENS.ONE;
-  const oneBal = useFaBalance(one.meta, one.decimals);
+  const d = TOKENS.D;
+  const dBal = useFaBalance(d.meta, d.decimals);
 
   const [state, setState] = useState<SpState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,12 +42,15 @@ export function OneSp() {
     setLoading(true);
     (async () => {
       try {
-        const totals = await oneTotals(rpc);
-        let sp = { effectiveBalance: 0n, pendingOne: 0n, pendingColl: 0n };
-        if (address) sp = await oneSpOf(rpc, address);
-        if (!cancelled) setState({ ...sp, totals });
+        const [totals, spPoolRaw] = await Promise.all([
+          dTotals(rpc),
+          dSpPoolBalance(rpc),
+        ]);
+        let sp = { effectiveBalance: 0n, pendingD: 0n, pendingColl: 0n };
+        if (address) sp = await dSpOf(rpc, address);
+        if (!cancelled) setState({ ...sp, totals, spPoolRaw });
       } catch (e) {
-        if (!cancelled) setError(decodeOneError(e));
+        if (!cancelled) setError(decodeDError(e));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -69,20 +73,20 @@ export function OneSp() {
     setAction("deposit");
     resetMsgs();
     try {
-      const amt = toRaw(n, ONE_PARAMS.ONE_DECIMALS);
+      const amt = toRaw(n, D_PARAMS.D_DECIMALS);
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::sp_deposit`,
+          function: `${D_PACKAGE}::D::sp_deposit`,
           typeArguments: [],
           functionArguments: [amt.toString()],
         },
       });
       setLastTx(result.hash);
       setDepositAmt("");
-      oneBal.refresh();
+      dBal.refresh();
       refresh();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -97,20 +101,20 @@ export function OneSp() {
     setAction("withdraw");
     resetMsgs();
     try {
-      const amt = toRaw(n, ONE_PARAMS.ONE_DECIMALS);
+      const amt = toRaw(n, D_PARAMS.D_DECIMALS);
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::sp_withdraw`,
+          function: `${D_PACKAGE}::D::sp_withdraw`,
           typeArguments: [],
           functionArguments: [amt.toString()],
         },
       });
       setLastTx(result.hash);
       setWithdrawAmt("");
-      oneBal.refresh();
+      dBal.refresh();
       refresh();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -125,16 +129,16 @@ export function OneSp() {
     try {
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::sp_claim`,
+          function: `${D_PACKAGE}::D::sp_claim`,
           typeArguments: [],
           functionArguments: [],
         },
       });
       setLastTx(result.hash);
-      oneBal.refresh();
+      dBal.refresh();
       refresh();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
       setAction(null);
@@ -145,12 +149,15 @@ export function OneSp() {
     return <p className="page-sub">Connect your wallet to interact with the Stability Pool.</p>;
   }
 
+  const donationDelta = state ? state.spPoolRaw - state.totals.totalSp : 0n;
+
   return (
     <>
       <p className="page-sub">
-        Deposit ONE to earn liquidation bonuses (10% APT surplus). No oracle
-        refresh required. Your share may dilute if the pool absorbs large debts
-        (product-factor decay).
+        Deposit D to earn liquidation bonuses (split 25% to liquidator / 25% to
+        reserve / 50% to SP collateral pool) plus 90% of mint+redeem fees
+        pro-rata to keyed depositors. For permanent agnostic donations (no
+        keyed credit) use the Donate page.
       </p>
 
       {loading && !state && <div className="hint">Loading SP…</div>}
@@ -159,12 +166,12 @@ export function OneSp() {
         <section className="protocol-grid">
           <div className="protocol-card small">
             <div className="protocol-label">Your SP balance</div>
-            <div className="protocol-big">{formatOne(state.effectiveBalance)}</div>
-            <div className="protocol-note">ONE effective</div>
+            <div className="protocol-big">{formatD(state.effectiveBalance)}</div>
+            <div className="protocol-note">D effective</div>
           </div>
           <div className="protocol-card small">
-            <div className="protocol-label">Pending ONE reward</div>
-            <div className="protocol-big">{formatOne(state.pendingOne, 6)}</div>
+            <div className="protocol-label">Pending D reward</div>
+            <div className="protocol-big">{formatD(state.pendingD, 6)}</div>
             <div className="protocol-note">fee / surplus share</div>
           </div>
           <div className="protocol-card small">
@@ -174,8 +181,11 @@ export function OneSp() {
           </div>
           <div className="protocol-card small">
             <div className="protocol-label">Pool total</div>
-            <div className="protocol-big">{formatOne(state.totals.totalSp)}</div>
-            <div className="protocol-note">ONE deposited</div>
+            <div className="protocol-big">{formatD(state.spPoolRaw)}</div>
+            <div className="protocol-note">
+              keyed {formatD(state.totals.totalSp)} +{" "}
+              {formatD(donationDelta > 0n ? donationDelta : 0n, 6)} donation
+            </div>
           </div>
         </section>
       )}
@@ -183,7 +193,7 @@ export function OneSp() {
       <h2 className="section-title">Deposit</h2>
       <div className="card" style={{ padding: 16 }}>
         <div className="swap-row">
-          <label>ONE to deposit</label>
+          <label>D to deposit</label>
           <div className="swap-input">
             <input
               type="number"
@@ -196,10 +206,10 @@ export function OneSp() {
           <button
             type="button"
             className="bal-link"
-            onClick={() => setDepositAmt(String(oneBal.formatted))}
-            disabled={oneBal.raw === 0n}
+            onClick={() => setDepositAmt(String(dBal.formatted))}
+            disabled={dBal.raw === 0n}
           >
-            Balance: {oneBal.loading ? "…" : oneBal.formatted.toFixed(4)} ONE
+            Balance: {dBal.loading ? "…" : dBal.formatted.toFixed(4)} D
           </button>
         </div>
         {error && action === "deposit" && <div className="err">{error}</div>}
@@ -209,14 +219,14 @@ export function OneSp() {
           disabled={!depositAmt || Number(depositAmt) <= 0 || submitting}
           onClick={submitDeposit}
         >
-          {submitting && action === "deposit" ? "Submitting…" : "Deposit ONE"}
+          {submitting && action === "deposit" ? "Submitting…" : "Deposit D"}
         </button>
       </div>
 
       <h2 className="section-title">Withdraw</h2>
       <div className="card" style={{ padding: 16 }}>
         <div className="swap-row">
-          <label>ONE to withdraw</label>
+          <label>D to withdraw</label>
           <div className="swap-input">
             <input
               type="number"
@@ -232,13 +242,13 @@ export function OneSp() {
             onClick={() =>
               setWithdrawAmt(
                 state
-                  ? String(Number(state.effectiveBalance) / 10 ** ONE_PARAMS.ONE_DECIMALS)
+                  ? String(Number(state.effectiveBalance) / 10 ** D_PARAMS.D_DECIMALS)
                   : "",
               )
             }
             disabled={!state || state.effectiveBalance === 0n}
           >
-            In pool: {state ? formatOne(state.effectiveBalance) : "—"} ONE
+            In pool: {state ? formatD(state.effectiveBalance) : "—"} D
           </button>
         </div>
         {error && action === "withdraw" && <div className="err">{error}</div>}
@@ -248,13 +258,13 @@ export function OneSp() {
           disabled={!withdrawAmt || Number(withdrawAmt) <= 0 || submitting}
           onClick={submitWithdraw}
         >
-          {submitting && action === "withdraw" ? "Submitting…" : "Withdraw ONE"}
+          {submitting && action === "withdraw" ? "Submitting…" : "Withdraw D"}
         </button>
       </div>
 
       <h2 className="section-title">Claim rewards</h2>
       <p className="page-sub">
-        Pull accumulated ONE + APT rewards without touching principal.
+        Pull accumulated D + APT rewards without touching principal.
       </p>
       <div className="card" style={{ padding: 16 }}>
         {error && action === "claim" && <div className="err">{error}</div>}
@@ -264,7 +274,7 @@ export function OneSp() {
           disabled={
             submitting ||
             !state ||
-            (state.pendingOne === 0n && state.pendingColl === 0n)
+            (state.pendingD === 0n && state.pendingColl === 0n)
           }
           onClick={submitClaim}
         >

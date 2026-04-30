@@ -1,14 +1,14 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useCallback, useEffect, useState } from "react";
-import { ONE_PACKAGE, ONE_PARAMS } from "../../config";
-import { onePrice8dec, oneTroveHealth } from "../../chain/one";
-import { decodeOneError } from "../../chain/oneErrors";
-import { formatApt, formatAptUsd, formatCrBps, formatOne } from "../../chain/oneFormat";
+import { D_PACKAGE, D_PARAMS } from "../../config";
+import { dPrice8dec, dTroveHealth } from "../../chain/d";
+import { decodeDError } from "../../chain/dErrors";
+import { formatApt, formatAptUsd, formatCrBps, formatD } from "../../chain/dFormat";
 import { fetchAptUsdVaa } from "../../chain/pyth";
 import { createRpcPool } from "../../chain/rpc-pool";
 import { useAddress } from "../../wallet/useConnect";
 
-const rpc = createRpcPool("one-liquidate");
+const rpc = createRpcPool("d-liquidate");
 
 type Health = {
   collateral: bigint;
@@ -26,7 +26,7 @@ type DiscoveredTrove = {
 
 // Discover potentially-liquidatable troves without the deprecated events
 // table. Strategy: account_transactions (indexed by account_address) gives
-// every tx that touched ONE_PACKAGE; JOIN user_transaction exposes the
+// every tx that touched D_PACKAGE; JOIN user_transaction exposes the
 // signer + entry function. We filter client-side for open_trove* calls,
 // dedupe senders, then probe trove_health for each in parallel. Troves
 // that are closed or redeemed to zero surface as debt=0 and get dropped.
@@ -37,8 +37,8 @@ async function discoverLiquidatableTroves(
   type Row = { user_transaction: UT };
   type Q = { account_transactions: Row[] };
   const openFns = new Set([
-    `${ONE_PACKAGE}::ONE::open_trove`,
-    `${ONE_PACKAGE}::ONE::open_trove_pyth`,
+    `${D_PACKAGE}::D::open_trove`,
+    `${D_PACKAGE}::D::open_trove_pyth`,
   ]);
   const query = {
     query: `query OpenTroveTxs($pkg: String!) {
@@ -53,7 +53,7 @@ async function discoverLiquidatableTroves(
         }
       }
     }`,
-    variables: { pkg: ONE_PACKAGE },
+    variables: { pkg: D_PACKAGE },
   };
   const res = await rpc.primary.queryIndexer<Q>({ query });
   const seen = new Set<string>();
@@ -68,7 +68,7 @@ async function discoverLiquidatableTroves(
   const results = await Promise.all(
     addrs.map(async (a) => {
       try {
-        const h = await oneTroveHealth(rpc, a);
+        const h = await dTroveHealth(rpc, a);
         return { address: a, ...h };
       } catch {
         return null;
@@ -88,7 +88,7 @@ async function discoverLiquidatableTroves(
   };
 }
 
-export function OneLiquidate() {
+export function DLiquidate() {
   const { signAndSubmitTransaction } = useWallet();
   const address = useAddress();
   const [target, setTarget] = useState("");
@@ -115,14 +115,14 @@ export function OneLiquidate() {
       // Fresh price for the payout estimate in the list; trove_health in
       // discoverLiquidatableTroves already uses the cached on-chain price.
       const [scan, p] = await Promise.all([
-        discoverLiquidatableTroves(BigInt(ONE_PARAMS.LIQ_THRESHOLD_BPS)),
-        onePrice8dec(rpc),
+        discoverLiquidatableTroves(BigInt(D_PARAMS.LIQ_THRESHOLD_BPS)),
+        dPrice8dec(rpc),
       ]);
       setDiscovered(scan.liquidatable);
       setScanStats({ healthyCount: scan.healthyCount, scanned: scan.scanned });
       setPriceRaw(p);
     } catch (e) {
-      setDiscoverError(decodeOneError(e));
+      setDiscoverError(decodeDError(e));
     } finally {
       setDiscovering(false);
     }
@@ -142,12 +142,12 @@ export function OneLiquidate() {
     setHealth(null);
     try {
       const [h, p] = await Promise.all([
-        oneTroveHealth(rpc, target),
-        onePrice8dec(rpc),
+        dTroveHealth(rpc, target),
+        dPrice8dec(rpc),
       ]);
       setHealth({ ...h, priceRaw: p });
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setChecking(false);
     }
@@ -173,7 +173,7 @@ export function OneLiquidate() {
       const vaa = await fetchAptUsdVaa();
       const result = await signAndSubmitTransaction({
         data: {
-          function: `${ONE_PACKAGE}::ONE::liquidate_pyth`,
+          function: `${D_PACKAGE}::D::liquidate_pyth`,
           typeArguments: [],
           functionArguments: [target, vaa],
         },
@@ -182,7 +182,7 @@ export function OneLiquidate() {
       check();
       refreshDiscovery();
     } catch (e) {
-      setError(decodeOneError(e));
+      setError(decodeDError(e));
     } finally {
       setSubmitting(false);
     }
@@ -191,21 +191,21 @@ export function OneLiquidate() {
   const liquidatable =
     health !== null &&
     health.debt > 0n &&
-    health.crBps < BigInt(ONE_PARAMS.LIQ_THRESHOLD_BPS);
+    health.crBps < BigInt(D_PARAMS.LIQ_THRESHOLD_BPS);
 
   const liquidatorApt = (() => {
     if (!health || !liquidatable || health.priceRaw === 0n) return 0n;
     const bonusUsd =
-      (health.debt * BigInt(ONE_PARAMS.LIQ_BONUS_BPS)) / 10_000n;
+      (health.debt * BigInt(D_PARAMS.LIQ_BONUS_BPS)) / 10_000n;
     const liqShareUsd =
-      (bonusUsd * BigInt(ONE_PARAMS.LIQ_LIQUIDATOR_BPS)) / 10_000n;
+      (bonusUsd * BigInt(D_PARAMS.LIQ_LIQUIDATOR_BPS)) / 10_000n;
     return (liqShareUsd * 100_000_000n) / health.priceRaw;
   })();
 
   function payoutFor(t: DiscoveredTrove): bigint {
     if (priceRaw === null || priceRaw === 0n) return 0n;
-    const bonusUsd = (t.debt * BigInt(ONE_PARAMS.LIQ_BONUS_BPS)) / 10_000n;
-    const liqShareUsd = (bonusUsd * BigInt(ONE_PARAMS.LIQ_LIQUIDATOR_BPS)) / 10_000n;
+    const bonusUsd = (t.debt * BigInt(D_PARAMS.LIQ_BONUS_BPS)) / 10_000n;
+    const liqShareUsd = (bonusUsd * BigInt(D_PARAMS.LIQ_LIQUIDATOR_BPS)) / 10_000n;
     return (liqShareUsd * 100_000_000n) / priceRaw;
   }
 
@@ -216,15 +216,15 @@ export function OneLiquidate() {
   return (
     <>
       <p className="page-sub">
-        Permissionless liquidation. We scan recent txns touching the ONE
+        Permissionless liquidation. We scan recent txns touching the D
         package via <code>account_transactions</code>, filter for{" "}
         <code>open_trove</code> / <code>open_trove_pyth</code> calls, probe{" "}
         <code>trove_health</code> for each signer, and list whoever sits below{" "}
-        {ONE_PARAMS.LIQ_THRESHOLD_BPS / 100}% CR. Click a row to auto-fill the
+        {D_PARAMS.LIQ_THRESHOLD_BPS / 100}% CR. Click a row to auto-fill the
         target, or paste an address manually. The stability pool absorbs the
-        debt; the {ONE_PARAMS.LIQ_BONUS_BPS / 100}% bonus on debt splits{" "}
-        {ONE_PARAMS.LIQ_LIQUIDATOR_BPS / 100}% to you /{" "}
-        {ONE_PARAMS.LIQ_SP_RESERVE_BPS / 100}% to reserve / remainder to the
+        debt; the {D_PARAMS.LIQ_BONUS_BPS / 100}% bonus on debt splits{" "}
+        {D_PARAMS.LIQ_LIQUIDATOR_BPS / 100}% to you /{" "}
+        {D_PARAMS.LIQ_SP_RESERVE_BPS / 100}% to reserve / remainder to the
         SP collateral pool.
       </p>
 
@@ -287,7 +287,7 @@ export function OneLiquidate() {
             >
               <span>Trove owner</span>
               <span>CR</span>
-              <span>Debt (ONE)</span>
+              <span>Debt (D)</span>
               <span>Payout (APT)</span>
             </div>
             {discovered.map((t) => (
@@ -325,7 +325,7 @@ export function OneLiquidate() {
                 <span style={{ color: "#ff6b6b", fontWeight: 600 }}>
                   {formatCrBps(t.crBps)}
                 </span>
-                <span>{formatOne(t.debt)}</span>
+                <span>{formatD(t.debt)}</span>
                 <span style={{ color: "#6eff8e" }}>
                   {formatApt(payoutFor(t), 6)}
                 </span>
@@ -371,8 +371,8 @@ export function OneLiquidate() {
             </div>
             <div className="protocol-card small">
               <div className="protocol-label">Debt</div>
-              <div className="protocol-big">{formatOne(health.debt)}</div>
-              <div className="protocol-note">ONE</div>
+              <div className="protocol-big">{formatD(health.debt)}</div>
+              <div className="protocol-note">D</div>
             </div>
             <div className="protocol-card small">
               <div className="protocol-label">CR</div>
@@ -390,7 +390,7 @@ export function OneLiquidate() {
                 {formatCrBps(health.crBps)}
               </div>
               <div className="protocol-note">
-                liq &lt; {ONE_PARAMS.LIQ_THRESHOLD_BPS / 100}%
+                liq &lt; {D_PARAMS.LIQ_THRESHOLD_BPS / 100}%
               </div>
             </div>
             <div className="protocol-card small">
@@ -405,7 +405,7 @@ export function OneLiquidate() {
 
         {health && !liquidatable && health.debt > 0n && (
           <div className="hint">
-            Trove is healthy (CR ≥ {ONE_PARAMS.LIQ_THRESHOLD_BPS / 100}%). Cannot
+            Trove is healthy (CR ≥ {D_PARAMS.LIQ_THRESHOLD_BPS / 100}%). Cannot
             liquidate until the APT price drops or CR degrades.
           </div>
         )}
@@ -416,8 +416,8 @@ export function OneLiquidate() {
         {liquidatable && (
           <div className="ok" style={{ marginBottom: 8 }}>
             Liquidatable. Your payout ≈ {formatApt(liquidatorApt, 6)} APT (
-            {ONE_PARAMS.LIQ_LIQUIDATOR_BPS / 100}% of the{" "}
-            {ONE_PARAMS.LIQ_BONUS_BPS / 100}% bonus on debt, converted at Pyth
+            {D_PARAMS.LIQ_LIQUIDATOR_BPS / 100}% of the{" "}
+            {D_PARAMS.LIQ_BONUS_BPS / 100}% bonus on debt, converted at Pyth
             price).
           </div>
         )}
