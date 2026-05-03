@@ -10,7 +10,7 @@
 import type { RpcPool } from "../rpc-pool";
 import { DESNET_PACKAGE } from "../../config";
 import type { MoveArg, MoveFn } from "./tx";
-import { ZERO_ADDR, MEDIA_KIND_NONE, type CreateMintInput } from "./mint";
+import { ZERO_ADDR, MEDIA_KIND_INLINE, MEDIA_KIND_NONE, type CreateMintInput } from "./mint";
 
 const MOD = "opinion";
 
@@ -29,18 +29,22 @@ export const DEFAULT_TAX_BPS = 10;     // 0.1%
 export const MAX_TAX_BPS = 1000;       // 10% (defense ceiling)
 export const BPS_DENOM = 10_000;
 
-// Side discriminator for deposit_pick_side.
-export const SIDE_YAY = 0;
-export const SIDE_NAY = 1;
-export const SIDE_NONE = 2;
+// Side discriminator for deposit_pick_side. MUST match opinion.move:70-72:
+// SIDE_NONE=0 (event-payload only — swap/redeem have no side), SIDE_YAY=1, SIDE_NAY=2.
+// Wrong values here → on-chain abort E_INVALID_SIDE=4 (deposit_pick_side asserts
+// `side == SIDE_YAY || side == SIDE_NAY`).
+export const SIDE_NONE = 0;
+export const SIDE_YAY = 1;
+export const SIDE_NAY = 2;
 
 // Kind discriminator for OpinionAction events / history payloads.
+// Mirror opinion.move:77-83 names exactly so indexers/UIs can switch on them.
 export const KIND_CREATE = 0;
 export const KIND_DEPOSIT = 1;
 export const KIND_SWAP_YAY_FOR_NAY = 2;
 export const KIND_SWAP_NAY_FOR_YAY = 3;
 export const KIND_REDEEM = 4;
-export const KIND_BALANCED = 5;
+export const KIND_DEPOSIT_BALANCED = 5;
 
 // Error code → label. Module abort errors come back via wallet adapter as
 // `(module, code)`. Use this map only for opinion-module aborts.
@@ -84,7 +88,7 @@ export function buildCreateOpinionMintArgs(i: CreateOpinionMintInput): MoveArg[]
   const contentBytes = Array.from(new TextEncoder().encode(i.contentText));
   const useAsset = !!i.assetMasterAddr;
   const inline = i.inline;
-  const mediaKind = useAsset ? MEDIA_KIND_NONE : inline ? 1 : MEDIA_KIND_NONE;
+  const mediaKind = useAsset ? MEDIA_KIND_NONE : inline ? MEDIA_KIND_INLINE : MEDIA_KIND_NONE;
   const mediaMime = useAsset ? 0 : inline ? inline.mime : 0;
   const mediaInlineData = useAsset ? [] : inline ? Array.from(inline.bytes) : [];
 
@@ -280,16 +284,26 @@ export function quoteSwap(
 }
 
 // Whole-token formatter for UI. Returns BigInt-safe string with ≤ N decimals.
+//
+// rc-frontend D-MED-1 fix: when truncating to maxFracDigits hides a non-zero
+// fractional component (e.g. raw=100_000_001n with maxFracDigits=4 would
+// display "1" instead of "1.00000001"), append a "<0.0001" indicator so users
+// don't think their dust balance is exactly zero.
 export function formatTokenAmount(raw: bigint, decimals = OPN_DECIMALS, maxFracDigits = 4): string {
   const denom = 10n ** BigInt(decimals);
   const whole = raw / denom;
   const frac = raw % denom;
   if (frac === 0n) return whole.toLocaleString();
   // Right-pad fraction to `decimals`, then trim to maxFracDigits, then strip trailing zeros.
-  let fracStr = frac.toString().padStart(decimals, "0");
-  if (fracStr.length > maxFracDigits) fracStr = fracStr.slice(0, maxFracDigits);
+  const fullFracStr = frac.toString().padStart(decimals, "0");
+  let fracStr = fullFracStr.length > maxFracDigits ? fullFracStr.slice(0, maxFracDigits) : fullFracStr;
   fracStr = fracStr.replace(/0+$/, "");
-  return fracStr.length > 0 ? `${whole.toLocaleString()}.${fracStr}` : whole.toLocaleString();
+  if (fracStr.length === 0) {
+    // Fraction exists but truncated below display precision. Show a "+ε" hint
+    // so the user knows the balance is not exactly the whole amount.
+    return `${whole.toLocaleString()}+ε`;
+  }
+  return `${whole.toLocaleString()}.${fracStr}`;
 }
 
 // Validate initial_mc against the contract's [MIN..MAX] gate before user

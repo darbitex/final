@@ -105,7 +105,13 @@ export function Opinion() {
           tokens,
         });
       } catch (e) {
-        if (!cancelled) setError((e as Error).message ?? String(e));
+        // Audit C MED-1: also flip exists → false on initial-load failure so
+        // the error UI surfaces. Without this, exists stays null forever and
+        // the page is stuck on "Loading market…" with no recourse.
+        if (!cancelled) {
+          setError((e as Error).message ?? String(e));
+          setExists(false);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -137,6 +143,17 @@ export function Opinion() {
 
   return (
     <div>
+      {snap.authorHandle === null && (
+        <div className="card" style={{ borderLeft: "4px solid #d97706", background: "#1a1100" }}>
+          <strong style={{ color: "#fbbf24" }}>⚠ Unregistered PID</strong>
+          <p className="muted small" style={{ margin: "4px 0 0 0" }}>
+            This market's author PID has no registered handle. You may have followed a phishing
+            link. Trading here is technically safe (chain enforces wallet auth) but every
+            interaction burns 0.1% of <code>${shortAddr(snap.creatorToken)}</code> as tax —
+            verify the market is legit before proceeding.
+          </p>
+        </div>
+      )}
       <Header snap={snap} />
       <Stats snap={snap} />
       <TradePanel snap={snap} onMutate={() => setLoadTick((t) => t + 1)} />

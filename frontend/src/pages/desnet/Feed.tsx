@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAddress } from "../../wallet/useConnect";
 import { fetchFaBalance } from "../../chain/balance";
@@ -401,6 +401,9 @@ function Compose({
   // Opinion-mint balance check: poll the author wallet's $creator_token
   // store. The bootstrap pulls `opinion_initial_mc` from the author's
   // primary store, so the wallet posting must hold at least that much.
+  // Audit C HIGH-1: include lastTx in deps so balance refetches after each
+  // successful submit — otherwise a 2nd opinion mint in the same session
+  // would gate against stale (pre-tx) balance and abort on chain.
   useEffect(() => {
     let cancelled = false;
     if (!myWallet || !creatorTokenMeta || !opinionEnabled) {
@@ -411,7 +414,7 @@ function Compose({
       .then((b) => { if (!cancelled) setCreatorTokenBalance(b); })
       .catch(() => { if (!cancelled) setCreatorTokenBalance(0n); });
     return () => { cancelled = true; };
-  }, [myWallet, creatorTokenMeta, opinionEnabled]);
+  }, [myWallet, creatorTokenMeta, opinionEnabled, lastTx]);
   const [tipBalances, setTipBalances] = useState<Map<string, bigint>>(new Map());
   const tipMetasKey = useMemo(
     () => tipRows.map((r) => r.resolvedTokenMeta ?? "").filter(Boolean).join(","),
@@ -442,7 +445,9 @@ function Compose({
       if (!cancelled) setTipBalances(new Map(entries));
     });
     return () => { cancelled = true; };
-  }, [tipMetasKey, myWallet]);
+    // Audit C HIGH-1: lastTx in deps — refetch tip balances after each submit
+    // so a 2nd consecutive mint with tips gates against fresh balances.
+  }, [tipMetasKey, myWallet, lastTx]);
 
   // Insufficient-tip detection: sum amounts per resolved token, compare
   // against connected wallet balance. Used to render row-level red badge
@@ -1176,14 +1181,14 @@ function FeedRow({
       <div className="feed-meta">
         <span className="verb-badge">{verbName}</span>{" "}
         {opinionMarket && (
-          <a
-            href={`/desnet/opinion/${decoded.author}/${decoded.seq}`}
+          <Link
+            to={`/desnet/opinion/${decoded.author}/${decoded.seq}`}
             className="verb-badge"
             style={{ background: "#1a4480", color: "#fff", textDecoration: "none" }}
             title="Opinion market — click to trade YAY/NAY"
           >
             opinion · trade →
-          </a>
+          </Link>
         )}{" "}
         <span className="muted small">
           @{authorHandle} · #{decoded.seq} ·{" "}
