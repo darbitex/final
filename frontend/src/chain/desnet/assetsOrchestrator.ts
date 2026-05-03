@@ -269,16 +269,38 @@ const B2_SCRIPT_URL = "/scripts/asset_upload_b2.mv";
 // Beyond this the orchestrator falls back to B1 multi-tx.
 const B2_MAX_CHUNKS_PER_SCRIPT = 28;
 
-let _b2BytecodeCache: Uint8Array | null = null;
-async function loadB2Bytecode(): Promise<Uint8Array> {
-  if (_b2BytecodeCache) return _b2BytecodeCache;
-  const resp = await fetch(B2_SCRIPT_URL);
-  if (!resp.ok) {
-    throw new Error(`Failed to load Tier-2 script bytecode (${B2_SCRIPT_URL}): ${resp.status}`);
-  }
-  const buf = await resp.arrayBuffer();
-  _b2BytecodeCache = new Uint8Array(buf);
-  return _b2BytecodeCache;
+// Promise-cache so concurrent uploads share a single fetch instead of
+// racing two independent network requests. Resolves once, served forever.
+const _bytecodeCache = new Map<string, Promise<Uint8Array>>();
+function loadScriptBytecode(url: string, tier: "Tier-2" | "Tier-3"): Promise<Uint8Array> {
+  let p = _bytecodeCache.get(url);
+  if (p) return p;
+  p = (async () => {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      _bytecodeCache.delete(url); // allow retry on next attempt after failure
+      throw new Error(`Failed to load ${tier} script bytecode (${url}): ${resp.status}`);
+    }
+    return new Uint8Array(await resp.arrayBuffer());
+  })();
+  _bytecodeCache.set(url, p);
+  return p;
+}
+
+function loadB2Bytecode(): Promise<Uint8Array> {
+  return loadScriptBytecode(B2_SCRIPT_URL, "Tier-2");
+}
+
+// Single-call replacement for `waitForTransaction(...) + getTransactionByHash(...)`.
+// `waitForTransaction` already returns the full UserTransactionResponse with
+// the events array — fetching by hash again was redundant.
+async function waitAndExtractMaster(aptos: Aptos, hash: string): Promise<string | null> {
+  const tx = (await aptos.waitForTransaction({ transactionHash: hash })) as {
+    events?: Array<{ type: string; data: Record<string, unknown> }>;
+  };
+  return extractMasterAddr(
+    (tx.events ?? []).map((e) => ({ type: e.type, data: e.data ?? {} })),
+  );
 }
 
 class B2OrchestratorImpl implements AssetOrchestrator {
@@ -288,6 +310,7 @@ class B2OrchestratorImpl implements AssetOrchestrator {
     bytes,
     mime,
     creatorPid,
+    uploaderAddr,
     submit,
     aptos,
     onProgress,
@@ -305,7 +328,7 @@ class B2OrchestratorImpl implements AssetOrchestrator {
         hint: `Asset is ${plan.chunks.length} chunks (>${B2_MAX_CHUNKS_PER_SCRIPT}); falling back to Tier-1 multi-tx.`,
         tier: 2,
       });
-      return _b1.upload({ bytes, mime, creatorPid, uploaderAddr: "", submit, aptos, onProgress });
+      return _b1.upload({ bytes, mime, creatorPid, uploaderAddr, submit, aptos, onProgress });
     }
 
     // ============ Build script args matching upload_b2(uploader, mime, total_size, creator_pid, chunks, node_chunk_counts, depth) ============
@@ -351,8 +374,7 @@ class B2OrchestratorImpl implements AssetOrchestrator {
         ],
       } as unknown as Parameters<typeof submit>[0]["data"],
     });
-    await aptos.waitForTransaction({ transactionHash: tx.hash });
-    const masterAddr = extractMasterAddr(await eventsOfTx(aptos, tx.hash));
+    const masterAddr = await waitAndExtractMaster(aptos, tx.hash);
     if (!masterAddr) {
       throw new Error(
         "Tier-2 script tx confirmed but AssetMasterCreated event missing. Double-check assets.move v0.3.4 is deployed.",
@@ -384,26 +406,13 @@ class B2OrchestratorImpl implements AssetOrchestrator {
 // nonce is monotonically increasing for the same uploader (avoids
 // E_SEED_TAKEN if a previous start_upload_v2 happened in the same ms).
 
-import {
-  bcsAddr as _bcsAddr,
-  deriveChunkAddrV2,
-  deriveMasterAddrV2,
-  deriveNodeAddrV2,
-} from "./sha3";
+import { deriveMasterAddrV2 } from "./sha3";
 
 const B3_SCRIPT_URL = "/scripts/asset_upload_b3.mv";
 const B3_MAX_CHUNKS_PER_SCRIPT = 28;
 
-let _b3BytecodeCache: Uint8Array | null = null;
-async function loadB3Bytecode(): Promise<Uint8Array> {
-  if (_b3BytecodeCache) return _b3BytecodeCache;
-  const resp = await fetch(B3_SCRIPT_URL);
-  if (!resp.ok) {
-    throw new Error(`Failed to load Tier-3 script bytecode (${B3_SCRIPT_URL}): ${resp.status}`);
-  }
-  const buf = await resp.arrayBuffer();
-  _b3BytecodeCache = new Uint8Array(buf);
-  return _b3BytecodeCache;
+function loadB3Bytecode(): Promise<Uint8Array> {
+  return loadScriptBytecode(B3_SCRIPT_URL, "Tier-3");
 }
 
 function pickNonce(): bigint {
@@ -453,6 +462,10 @@ class B3OrchestratorImpl implements AssetOrchestrator {
       nodeChunkCounts = plan.treeShape.nodeShapes.map((g) => g.chunkRange[1] - g.chunkRange[0]);
     }
 
+    if (!uploaderAddr) {
+      throw new Error("Tier-3 needs a connected wallet — uploaderAddr was empty.");
+    }
+
     // Pre-compute master_addr off-chain. Used so the caller knows the addr
     // before tx confirmation (e.g., to optimistically attach to a draft mint).
     const nonce = pickNonce();
@@ -482,23 +495,17 @@ class B3OrchestratorImpl implements AssetOrchestrator {
         ],
       } as unknown as Parameters<typeof submit>[0]["data"],
     });
-    await aptos.waitForTransaction({ transactionHash: tx.hash });
-
     // Defense-in-depth: re-verify masterAddr derivation matches the actual
     // emitted event. If they diverge it means the JS sha3 derivation has a
-    // bug AND finalize_v2(verify_seed=true) didn't catch it — which would
-    // be surprising since the script also asserts. Belt + suspenders.
-    const eventMaster = extractMasterAddr(await eventsOfTx(aptos, tx.hash));
+    // bug AND finalize_v2(verify_seed=true) didn't catch it — would be
+    // surprising since the script also asserts. Belt + suspenders.
+    const eventMaster = await waitAndExtractMaster(aptos, tx.hash);
     if (eventMaster && eventMaster.toLowerCase() !== masterAddr.toLowerCase()) {
       throw new Error(
         `Tier-3 derivation mismatch: pre-computed ${masterAddr} vs event ${eventMaster}. ` +
           "Bug in JS sha3 derivation or assets.move seed builders.",
       );
     }
-    // Touch the unused import to keep tree-shaker honest about side-effects we want.
-    void _bcsAddr;
-    void deriveChunkAddrV2;
-    void deriveNodeAddrV2;
 
     onProgress?.({
       phase: "done",

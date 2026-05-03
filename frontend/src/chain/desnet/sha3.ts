@@ -56,9 +56,16 @@ export function createObjectAddress(creator: string, seed: Uint8Array): string {
 
 // ============ BCS encoding helpers (just enough for our seeds) ============
 
+const U64_MAX = (1n << 64n) - 1n;
+
 /// BCS-encode a u64 as little-endian 8 bytes.
+/// Throws on negative or out-of-range input — silently truncating would
+/// produce wrong addresses without any error surface.
 export function bcsU64(n: bigint | number): Uint8Array {
   const v = typeof n === "bigint" ? n : BigInt(n);
+  if (v < 0n || v > U64_MAX) {
+    throw new RangeError(`bcsU64 out of range: ${v} (must be 0..2^64-1)`);
+  }
   const out = new Uint8Array(8);
   let x = v;
   for (let i = 0; i < 8; i++) {

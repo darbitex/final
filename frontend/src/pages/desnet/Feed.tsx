@@ -463,6 +463,11 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
     tipsAffordable &&
     !submitting;
 
+  // Note (M3 audit follow-up): no AbortController needed. `submit()` captures
+  // `file` as a closure local at the time the user clicked Mint; if they
+  // change the file picker afterwards, the in-flight read still resolves
+  // with the originally-selected file's bytes — which is exactly what the
+  // user requested. Concurrent submits are gated by the `submitting` state.
   async function readFileBytes(f: File): Promise<Uint8Array> {
     return new Promise((resolve, reject) => {
       const fr = new FileReader();
