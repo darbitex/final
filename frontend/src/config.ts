@@ -183,9 +183,19 @@ export const DESNET_REACTION_EMISSION_RESERVE =
 export const DESNET_APT_VAULT =
   "0xfd45ced87cc95c4a9f2bba5c633b357d748d0b03071e19ff2b66529104774d09";
 
+// First opinion market on mainnet — "Make Aptos Great Again" by the desnet
+// handle (PID owner @origin). seq=1, seeded with 25M DESNET. Lives at the
+// deterministic address derived from (DESNET_PID_NFT, seq=1).
+export const DESNET_FIRST_OPINION_MARKET =
+  "0xc3ee69681fe46af7d82480c96b1cc4a598f960aa94f8994d003d6463a5092dac";
+
 // AMM swap fee, hardcoded in amm.move. 10 bps, 100% to LP. Distinct
 // from POOL_FEE_BPS (which is darbitex AMM, 5 bps).
 export const DESNET_AMM_FEE_BPS = 10;
+// Opinion-market trade tax — 0.1% of spot-equivalent $creator_token,
+// burned via apt_vault::burn_via_vault on every deposit/swap/redeem.
+// Hardcoded in opinion.move::DEFAULT_TAX_BPS.
+export const DESNET_OPINION_TAX_BPS = 10;
 
 // Length-tier handle pricing in APT octas. Mirrors the constants in
 // profile.move::handle_fee_apt. Plus a 5 APT pool seed (octas) added on

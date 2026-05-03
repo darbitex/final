@@ -11,6 +11,7 @@ export * from "./link";
 export * from "./press";
 export * from "./assets";
 export * from "./assetsOrchestrator";
+export * from "./opinion";
 export * from "./history";
 export * from "./tokenIcon";
 export * from "./format";

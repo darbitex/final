@@ -301,6 +301,19 @@ export function AboutPage() {
           keyed depositors. Permissionless donate_to_sp + donate_to_reserve.
           Package <code>0x587c8084…</code>, FA <code>0x9015d5a6…</code>.
         </div>
+        <div className="about-sat">
+          <strong>DeSNet &mdash; decentralized social network</strong>
+          <span className="dim"> &mdash; </span>
+          Sister protocol on Aptos. Every profile is a transferable PID NFT,
+          every profile spawns its own factory token, every social action is
+          an on-chain primitive. As of v0.4 every mint can carry an{" "}
+          <strong>opinion market</strong> &mdash; a perpetual no-settle{" "}
+          <code>x &times; y = k</code> belief market denominated in the
+          author's own token, with a 0.1% trade tax burned into deflation. 19
+          modules, 3/5 multisig governance, R7 audit 5/6 GREEN. Lives at{" "}
+          <code>0x7ba7ee5a…</code>. Browse the full app at{" "}
+          <a href="/desnet">/desnet</a>.
+        </div>
       </div>
 
       <h2 className="section-title">Protocol &mdash; live state</h2>
