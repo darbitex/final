@@ -131,11 +131,7 @@ export function Feed() {
     };
   }, [author, feedTick]);
 
-  const isMyProfile = !!(
-    myAddr &&
-    author &&
-    myAddr.toLowerCase() === author.wallet.toLowerCase()
-  );
+  const isMyProfile = !!(myAddr && author && aptosAddrEq(myAddr, author.wallet));
 
   if (authorMissing) {
     return (

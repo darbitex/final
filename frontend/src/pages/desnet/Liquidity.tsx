@@ -22,6 +22,7 @@ import {
 } from "../../chain/desnet/staking";
 import { APT_VIEW, useTokenView } from "../../chain/desnet/tokenIcon";
 import { TokenIcon } from "../../components/TokenIcon";
+import { normalizeAptosAddr } from "../../chain/desnet/format";
 
 const APT = TOKENS.APT;
 const rpc = createRpcPool("desnet-liquidity");
@@ -313,7 +314,17 @@ export function Liquidity() {
 
   function importPasteAddr() {
     if (!resolvedHandle || !address || !pasteAddr.trim()) return;
-    rememberPosition(resolvedHandle, address, pasteAddr.trim());
+    setError(null);
+    let canonical: string;
+    try {
+      canonical = normalizeAptosAddr(pasteAddr.trim());
+    } catch {
+      setError(
+        `"${pasteAddr.trim()}" isn't a valid Aptos address. Expected 0x + up to 64 hex chars.`,
+      );
+      return;
+    }
+    rememberPosition(resolvedHandle, address, canonical);
     setPasteAddr("");
     setLastTx(lastTx ?? "imported"); // trigger position reload
   }

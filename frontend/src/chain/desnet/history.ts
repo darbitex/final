@@ -4,6 +4,14 @@ import { mimeName } from "./mint";
 
 const MOD = "history";
 
+/// Audit-pass A1: silent catch blocks across the view wrappers used to mask
+/// RPC schema drift + transient network errors. Funnel everything through
+/// devWarn so failures are visible in browser devtools but the page still
+/// renders sensible defaults (0, null, []) rather than crashing the feed.
+function devWarn(label: string, e: unknown): void {
+  if (typeof console !== "undefined") console.warn(`history.${label}:`, e);
+}
+
 // Verb constants from history.move::test_verb_constants
 export const VERB = {
   MINT: 0,
@@ -50,7 +58,8 @@ export async function historyExists(rpc: RpcPool, pidAddr: string): Promise<bool
       DESNET_PACKAGE,
     );
     return Boolean(r[0]);
-  } catch {
+  } catch (e) {
+    devWarn("historyExists", e);
     return false;
   }
 }
@@ -64,7 +73,8 @@ export async function totalEntries(rpc: RpcPool, pidAddr: string): Promise<numbe
       DESNET_PACKAGE,
     );
     return Number(r[0]);
-  } catch {
+  } catch (e) {
+    devWarn("totalEntries", e);
     return 0;
   }
 }
@@ -78,7 +88,8 @@ export async function headChunkAddr(rpc: RpcPool, pidAddr: string): Promise<stri
       DESNET_PACKAGE,
     );
     return String(r[0]);
-  } catch {
+  } catch (e) {
+    devWarn("headChunkAddr", e);
     return null;
   }
 }
@@ -92,7 +103,8 @@ export async function sealedChunksList(rpc: RpcPool, pidAddr: string): Promise<s
       DESNET_PACKAGE,
     );
     return (r[0] ?? []).map(String);
-  } catch {
+  } catch (e) {
+    devWarn("sealedChunksList", e);
     return [];
   }
 }
@@ -106,7 +118,8 @@ export async function chunkEntriesCount(rpc: RpcPool, chunkAddr: string): Promis
       DESNET_PACKAGE,
     );
     return Number(r[0]);
-  } catch {
+  } catch (e) {
+    devWarn("chunkEntriesCount", e);
     return 0;
   }
 }
@@ -134,7 +147,8 @@ export async function chunkEntryAt(
       payloadHex: String(r[3]),
       asset: optAddr(r[4]),
     };
-  } catch {
+  } catch (e) {
+    devWarn("chunkEntryAt", e);
     return null;
   }
 }
@@ -252,7 +266,16 @@ export function decodeMintPayload(payloadHex: string): DecodedMint | null {
         amount: r.u64(),
       })),
     };
-  } catch {
+  } catch (e) {
+    // Malformed payload — silent-skip in the feed so a single bad mint
+    // doesn't break rendering, but log so we can see if a class of payloads
+    // starts failing (e.g. a Move struct change we forgot to mirror here).
+    console.warn(
+      "decodeMintPayload: malformed BCS payload (skipping mint):",
+      e,
+      "first 32B:",
+      payloadHex.slice(0, 66),
+    );
     return null;
   }
 }
@@ -273,15 +296,29 @@ class Reader {
   private off = 0;
   constructor(private buf: Uint8Array) {}
 
+  /// Bounds-check helper. Without this, short or truncated payloads (e.g.
+  /// from an indexer that streams partial bytes) silently produce wrong
+  /// values via reads past the end of the underlying buffer.
+  private need(n: number): void {
+    if (this.off + n > this.buf.length) {
+      throw new Error(
+        `BCS read past end: need ${n} bytes at offset ${this.off}, buffer has ${this.buf.length}`,
+      );
+    }
+  }
+
   u8(): number {
+    this.need(1);
     return this.buf[this.off++];
   }
   u16(): number {
+    this.need(2);
     const v = this.buf[this.off] | (this.buf[this.off + 1] << 8);
     this.off += 2;
     return v;
   }
   u64(): bigint {
+    this.need(8);
     let v = 0n;
     for (let i = 0; i < 8; i++) v |= BigInt(this.buf[this.off + i]) << BigInt(i * 8);
     this.off += 8;
@@ -291,20 +328,26 @@ class Reader {
     let v = 0;
     let shift = 0;
     while (true) {
+      this.need(1);
       const b = this.buf[this.off++];
       v |= (b & 0x7f) << shift;
       if ((b & 0x80) === 0) break;
       shift += 7;
+      // ULEB128 for u64 is at most 10 bytes (10*7 = 70 bits ≥ 64 bits).
+      // Anything longer is malformed and could lead to runaway loops.
+      if (shift > 70) throw new Error("ULEB128 too long (likely malformed)");
     }
     return v;
   }
   bytes(): Uint8Array {
     const len = this.uleb128();
+    this.need(len);
     const out = this.buf.slice(this.off, this.off + len);
     this.off += len;
     return out;
   }
   address(): string {
+    this.need(32);
     const out = this.buf.slice(this.off, this.off + 32);
     this.off += 32;
     return "0x" + bytesToHex(out);

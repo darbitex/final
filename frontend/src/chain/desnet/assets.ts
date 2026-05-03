@@ -95,10 +95,13 @@ export function txCountForPlan(plan: UploadPlan): number {
 
 // Parse the master_addr from a `start_upload` tx response. The Aptos SDK
 // returns events on the committed tx; we grep for AssetMasterCreated.
+// Returns null on missing event OR missing field (caller treats both the
+// same way — the upload couldn't be linked to a master).
 export function extractMasterAddr(events: TxEvent[]): string | null {
   for (const e of events) {
     if (e.type.endsWith(`::${MOD}::AssetMasterCreated`)) {
-      return String(e.data?.master_addr ?? "");
+      const v = e.data?.master_addr;
+      return v ? String(v) : null;
     }
   }
   return null;
@@ -107,7 +110,8 @@ export function extractMasterAddr(events: TxEvent[]): string | null {
 export function extractChunkAddr(events: TxEvent[]): string | null {
   for (const e of events) {
     if (e.type.endsWith(`::${MOD}::AssetChunkDeployed`)) {
-      return String(e.data?.chunk_addr ?? "");
+      const v = e.data?.chunk_addr;
+      return v ? String(v) : null;
     }
   }
   return null;
@@ -116,7 +120,8 @@ export function extractChunkAddr(events: TxEvent[]): string | null {
 export function extractNodeAddr(events: TxEvent[]): string | null {
   for (const e of events) {
     if (e.type.endsWith(`::${MOD}::AssetNodeDeployed`)) {
-      return String(e.data?.node_addr ?? "");
+      const v = e.data?.node_addr;
+      return v ? String(v) : null;
     }
   }
   return null;

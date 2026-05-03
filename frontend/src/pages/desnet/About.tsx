@@ -46,8 +46,12 @@ export function About() {
       </p>
       <p>
         <strong>Status:</strong> v0.3.3 live on Aptos mainnet
-        (<code>{shortAddr(DESNET_PACKAGE)}</code>). 18 Move modules, ~8.9k LoC,
-        audited by a 6-LLM panel (5 GREEN / 1 YELLOW disputed-and-rejected).
+        (<code>{shortAddr(DESNET_PACKAGE)}</code>). 18 Move modules, ~8.9k LoC.
+      </p>
+      <p className="muted small">
+        The 5 GREEN / 1 YELLOW R6 verdict below covers the on-chain Move
+        package only. This frontend (~4.7k LoC TS/React) ships its own
+        self-audit pass and is not part of the external R6 panel.
       </p>
       <p>
         <strong>License:</strong>{" "}

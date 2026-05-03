@@ -321,12 +321,14 @@ class B2OrchestratorImpl implements AssetOrchestrator {
     // bundled-script approach only saves wallet popups; it can't bypass
     // gas limits).
     if (plan.chunks.length > B2_MAX_CHUNKS_PER_SCRIPT) {
+      // Fallback emits tier:1 so the UI badge matches what's actually about
+      // to happen (N+2 wallet popups, not 1). The hint explains why.
       onProgress?.({
         phase: "start",
         step: 1,
         totalSteps: 1,
         hint: `Asset is ${plan.chunks.length} chunks (>${B2_MAX_CHUNKS_PER_SCRIPT}); falling back to Tier-1 multi-tx.`,
-        tier: 2,
+        tier: 1,
       });
       return _b1.upload({ bytes, mime, creatorPid, uploaderAddr, submit, aptos, onProgress });
     }
@@ -416,12 +418,14 @@ function loadB3Bytecode(): Promise<Uint8Array> {
 }
 
 function pickNonce(): bigint {
-  // Microsecond-granularity timestamp + 16 random bits. Collision probability
-  // for the same uploader is ~1/65536 per microsecond — vanishingly small.
-  const ms = BigInt(Date.now());
-  const us = ms * 1000n;
-  const rand = BigInt(Math.floor(Math.random() * 65536));
-  return us + rand;
+  // 64 bits of cryptographic randomness. Same-uploader collision probability
+  // is 1/2^64 (≈ 1.8e19) — assume effectively zero. We don't encode the
+  // timestamp in the nonce because Master.created_at_secs already captures
+  // wall-clock time on chain; the nonce is purely a uniqueness token.
+  // assets.move enforces u64 range; this stays within bounds by construction.
+  const buf = new Uint32Array(2);
+  crypto.getRandomValues(buf);
+  return (BigInt(buf[0]) << 32n) | BigInt(buf[1]);
 }
 
 class B3OrchestratorImpl implements AssetOrchestrator {
@@ -439,12 +443,13 @@ class B3OrchestratorImpl implements AssetOrchestrator {
     const plan = planUpload(bytes, mime);
 
     if (plan.chunks.length > B3_MAX_CHUNKS_PER_SCRIPT) {
+      // See B2 fallback note — tier:1 in the badge so the UI matches reality.
       onProgress?.({
         phase: "start",
         step: 1,
         totalSteps: 1,
         hint: `Asset is ${plan.chunks.length} chunks (>${B3_MAX_CHUNKS_PER_SCRIPT}); falling back to Tier-1 multi-tx.`,
-        tier: 3,
+        tier: 1,
       });
       return _b1.upload({ bytes, mime, creatorPid, uploaderAddr, submit, aptos, onProgress });
     }
