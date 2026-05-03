@@ -1,5 +1,6 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useMemo, useState } from "react";
+import { DesnetArbPanel } from "../components/DesnetArbPanel";
 import { FlashbotPanel } from "../components/FlashbotPanel";
 import { HyperionRouterPanel } from "../components/HyperionRouterPanel";
 import { TokenIcon } from "../components/TokenIcon";
@@ -335,6 +336,7 @@ export function ArbitragePage() {
 
       <FlashbotPanel />
       <HyperionRouterPanel />
+      <DesnetArbPanel />
     </div>
   );
 }

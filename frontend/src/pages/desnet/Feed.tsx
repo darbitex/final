@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAddress } from "../../wallet/useConnect";
 import { fetchFaBalance } from "../../chain/balance";
@@ -54,6 +54,13 @@ import {
   type OrchestratorTier,
   type UploadProgress,
 } from "../../chain/desnet/assetsOrchestrator";
+import { OpinionInlineActions } from "../../components/OpinionInlineActions";
+import { EchoIcon, OpinionIcon, PressIcon, RemixIcon, SparkIcon, VoiceIcon } from "../../components/VerbIcons";
+
+// Cross-component prefill payload — when user clicks Voice/Remix on a feed
+// row, Feed lifts this into its scope and Compose reads it on next render to
+// pre-set its mode + ref input. Cleared after Compose consumes it.
+type ComposePrefill = { mode: "voice" | "remix"; author: string; seq: number; handle: string };
 import { CHUNK_SIZE_MAX, MAX_TOTAL_SIZE } from "../../chain/desnet/assets";
 import type { MoveArg, MoveFn } from "../../chain/desnet/tx";
 import {
@@ -86,6 +93,32 @@ export function Feed() {
   const [feed, setFeed] = useState<HistoryEntry[]>([]);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [feedTick, setFeedTick] = useState(0);
+  // Compose-prefill bridge — populated when user clicks Voice/Remix on any
+  // FeedRow. Compose useEffect consumes + clears on next render.
+  const [composePrefill, setComposePrefill] = useState<ComposePrefill | null>(null);
+
+  // URL-driven prefill — when user clicks Voice/Remix from an aggregated feed
+  // (Feeds.tsx), it navigates here with ?prefill_mode=voice&prefill_author=…&prefill_seq=…&prefill_handle=…
+  // Consume on mount, then strip the params so refresh doesn't re-trigger.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const mode = searchParams.get("prefill_mode");
+    const auth = searchParams.get("prefill_author");
+    const seqStr = searchParams.get("prefill_seq");
+    const h = searchParams.get("prefill_handle");
+    if (!mode || !auth || !seqStr || !h) return;
+    if (mode !== "voice" && mode !== "remix") return;
+    const seq = Number(seqStr);
+    if (!Number.isFinite(seq) || seq < 0) return;
+    setComposePrefill({ mode, author: auth, seq, handle: h });
+    // Strip params to prevent re-trigger on remount
+    const next = new URLSearchParams(searchParams);
+    next.delete("prefill_mode");
+    next.delete("prefill_author");
+    next.delete("prefill_seq");
+    next.delete("prefill_handle");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Resolve handle → wallet → pidAddr
   useEffect(() => {
@@ -162,6 +195,8 @@ export function Feed() {
         <Compose
           authorPid={author.pidAddr}
           authorHandle={author.handle}
+          prefill={composePrefill}
+          onPrefillConsumed={() => setComposePrefill(null)}
           onPosted={() => setFeedTick((t) => t + 1)}
         />
       )}
@@ -185,6 +220,8 @@ export function Feed() {
               entry={e}
               myPid={myPid}
               authorHandle={author.handle}
+              isMyProfile={isMyProfile}
+              onComposePrefill={(p) => setComposePrefill(p)}
             />
           ))}
         </div>
@@ -202,10 +239,14 @@ type Ref = { author: string; seq: number; handle: string };
 function Compose({
   authorPid,
   authorHandle,
+  prefill,
+  onPrefillConsumed,
   onPosted,
 }: {
   authorPid: string;
   authorHandle: string;
+  prefill: ComposePrefill | null;
+  onPrefillConsumed: () => void;
   onPosted: () => void;
 }) {
   const { signAndSubmitTransaction } = useWallet();
@@ -225,6 +266,24 @@ function Compose({
   const [resolvedRef, setResolvedRef] = useState<Ref | null>(null);
   const [refError, setRefError] = useState<string | null>(null);
   const [refResolving, setRefResolving] = useState(false);
+
+  // Prefill consumer — when a FeedRow's Voice/Remix icon was clicked, the
+  // parent lifts the (mode, author, seq, handle) into prefill. We hydrate
+  // composeMode + refInput here, then immediately notify parent to clear.
+  useEffect(() => {
+    if (!prefill) return;
+    setComposeMode(prefill.mode);
+    setRefInput(`@${prefill.handle}#${prefill.seq}`);
+    // Pre-resolve ref so the user doesn't see a brief "Resolving…" flash.
+    setResolvedRef({ author: prefill.author, seq: prefill.seq, handle: prefill.handle });
+    setRefError(null);
+    setRefResolving(false);
+    // Smooth-scroll the compose card into view.
+    requestAnimationFrame(() => {
+      document.querySelector(".compose-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    onPrefillConsumed();
+  }, [prefill, onPrefillConsumed]);
 
   // ============ Opinion-mint toggle (v0.4) ============
   const [opinionEnabled, setOpinionEnabled] = useState(false);
@@ -1033,10 +1092,14 @@ function FeedRow({
   entry,
   myPid,
   authorHandle,
+  isMyProfile,
+  onComposePrefill,
 }: {
   entry: HistoryEntry;
   myPid: string | null;
   authorHandle: string;
+  isMyProfile: boolean;
+  onComposePrefill: (p: ComposePrefill) => void;
 }) {
   const { signAndSubmitTransaction } = useWallet();
   const [busy, setBusy] = useState<string | null>(null);
@@ -1060,6 +1123,8 @@ function FeedRow({
   // Null = still loading; true/false once resolved. Only mints (not voice/remix)
   // can have opinion markets in v0.4 — but the view is cheap so we query for all.
   const [opinionMarket, setOpinionMarket] = useState<boolean | null>(null);
+  // Click-to-expand for the opinion trade panel — keeps timeline compact.
+  const [opinionOpen, setOpinionOpen] = useState(false);
   const [pressForm, setPressForm] = useState<{
     open: boolean;
     supplyCap: string;
@@ -1182,7 +1247,7 @@ function FeedRow({
         <span className="verb-badge">{verbName}</span>{" "}
         {opinionMarket && (
           <Link
-            to={`/desnet/opinion/${decoded.author}/${decoded.seq}`}
+            to={`/desnet/social/opinion/${decoded.author}/${decoded.seq}`}
             className="verb-badge"
             style={{ background: "#1a4480", color: "#fff", textDecoration: "none" }}
             title="Opinion market — click to trade YAY/NAY"
@@ -1218,58 +1283,159 @@ function FeedRow({
           ))}
         </div>
       )}
-      {canAct && (
-        <div className="feed-actions">
-          <button
-            className="link"
-            onClick={() => fire(SPARK_FN, sparkArgs(decoded.author, decoded.seq))}
-            disabled={busy != null}
-          >
-            spark
-          </button>
-          <button
-            className="link"
-            onClick={() => fire(ECHO_FN, echoArgs(decoded.author, decoded.seq))}
-            disabled={busy != null}
-          >
-            echo
-          </button>
+      {/* Action bar — icon-only, all verbs always visible (guests can SEE
+          everything, only INTERACTION is gated by tooltips on disabled state).
+          Same principle applies to mint_gate / reference_gate / opinion. */}
+      <div className="feed-actions" style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <button
+          className="link verb-btn"
+          onClick={() => canAct && fire(SPARK_FN, sparkArgs(decoded.author, decoded.seq))}
+          disabled={!canAct || busy != null}
+          title={canAct ? "Spark (like)" : "Connect wallet with handle to spark"}
+          aria-label="spark"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+        >
+          <SparkIcon />
+        </button>
+        {/* Voice = reply. Click prefils Compose box on author's own profile.
+            Disabled for guests AND for non-owners viewing someone else's
+            profile (Compose only renders on isMyProfile). */}
+        <button
+          className="link verb-btn"
+          onClick={() => {
+            if (!canAct || !isMyProfile) return;
+            onComposePrefill({ mode: "voice", author: decoded.author, seq: decoded.seq, handle: authorHandle });
+          }}
+          disabled={!canAct || !isMyProfile || busy != null}
+          title={
+            !canAct
+              ? "Connect wallet with handle to voice"
+              : !isMyProfile
+                ? "Switch to your own profile to voice (compose box only renders there)"
+                : "Voice (reply to this mint)"
+          }
+          aria-label="voice"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+        >
+          <VoiceIcon />
+        </button>
 
-          {/* Press: state machine driven by isPressEnabled + hasPressed.
-              - enabled === null: still loading
-              - enabled === false + author: show "Enable press" affordance
-              - enabled === false + non-author: hide entirely (can't press what isn't enabled)
-              - enabled === true + !iPressed: live press button with count
-              - enabled === true + iPressed: badge */}
-          {pressEnabled === null && <span className="muted small">…</span>}
-          {pressEnabled === false && isAuthor && !pressForm.open && (
-            <button
-              className="link"
-              onClick={() => setPressForm((f) => ({ ...f, open: true }))}
-              disabled={busy != null}
-            >
-              enable press
-            </button>
-          )}
-          {pressEnabled === true && !iPressed && (
-            <button
-              className="link"
-              onClick={() => fire(PRESS_FN, pressArgs(decoded.author, decoded.seq))}
-              disabled={busy != null}
-            >
-              press ({pressCount})
-            </button>
-          )}
-          {pressEnabled === true && iPressed && (
-            <span className="muted small">pressed ✓ ({pressCount})</span>
-          )}
-        </div>
-      )}
+        <button
+          className="link verb-btn"
+          onClick={() => canAct && fire(ECHO_FN, echoArgs(decoded.author, decoded.seq))}
+          disabled={!canAct || busy != null}
+          title={canAct ? "Echo (repost)" : "Connect wallet with handle to echo"}
+          aria-label="echo"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+        >
+          <EchoIcon />
+        </button>
+
+        {/* Remix = quote-post. Same prefill pattern as Voice. */}
+        <button
+          className="link verb-btn"
+          onClick={() => {
+            if (!canAct || !isMyProfile) return;
+            onComposePrefill({ mode: "remix", author: decoded.author, seq: decoded.seq, handle: authorHandle });
+          }}
+          disabled={!canAct || !isMyProfile || busy != null}
+          title={
+            !canAct
+              ? "Connect wallet with handle to remix"
+              : !isMyProfile
+                ? "Switch to your own profile to remix (compose box only renders there)"
+                : "Remix (quote this mint)"
+          }
+          aria-label="remix"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+        >
+          <RemixIcon />
+        </button>
+
+        {/* Press state machine — same icon, varying count/tooltip + author affordance */}
+        {pressEnabled === null && (
+          <span className="muted small" title="loading press state">…</span>
+        )}
+        {pressEnabled === false && isAuthor && !pressForm.open && (
+          <button
+            className="link verb-btn"
+            onClick={() => setPressForm((f) => ({ ...f, open: true }))}
+            disabled={busy != null}
+            title="Enable press emission for this mint (author only)"
+            aria-label="enable press"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, opacity: 0.7 }}
+          >
+            <PressIcon /> + enable
+          </button>
+        )}
+        {pressEnabled === false && !isAuthor && (
+          <span
+            className="muted small"
+            title="Author hasn't enabled press emission yet"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, opacity: 0.4 }}
+          >
+            <PressIcon />
+          </span>
+        )}
+        {pressEnabled === true && !iPressed && (
+          <button
+            className="link verb-btn"
+            onClick={() => canAct && fire(PRESS_FN, pressArgs(decoded.author, decoded.seq))}
+            disabled={!canAct || busy != null}
+            title={canAct ? `Press (collect, ${pressCount} pressed)` : "Connect wallet with handle to press"}
+            aria-label="press"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            <PressIcon /> {pressCount > 0 ? pressCount : ""}
+          </button>
+        )}
+        {pressEnabled === true && iPressed && (
+          <span
+            className="muted small"
+            title={`You pressed this. ${pressCount} total.`}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            <PressIcon /> {pressCount} ✓
+          </span>
+        )}
+
+        {/* Opinion verb — only renders when market_exists for this mint.
+            Click toggles the inline panel below. Same principle: icon visible
+            to all viewers; interaction gated inside the panel. */}
+        {opinionMarket === true && (
+          <button
+            className="link verb-btn"
+            onClick={() => setOpinionOpen((o) => !o)}
+            title={opinionOpen ? "Hide opinion market" : "Open opinion market (YAY/NAY)"}
+            aria-label="opinion"
+            aria-expanded={opinionOpen}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              color: opinionOpen ? "#fff" : "#0EF",
+              background: opinionOpen ? "#1a4480" : "transparent",
+              padding: opinionOpen ? "2px 6px" : 0,
+              borderRadius: 4,
+            }}
+          >
+            <OpinionIcon />
+          </button>
+        )}
+      </div>
 
       {actionError && (
         <p className="error small" style={{ marginTop: 6 }}>
           {actionError}
         </p>
+      )}
+
+      {opinionMarket === true && opinionOpen && (
+        <OpinionInlineActions
+          authorPid={decoded.author}
+          seq={decoded.seq}
+          authorHandle={authorHandle}
+        />
       )}
 
       {pressForm.open && isAuthor && (

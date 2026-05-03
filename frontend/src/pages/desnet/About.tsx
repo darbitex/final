@@ -53,12 +53,16 @@ export function About() {
       <p>
         <strong>Status:</strong> v0.4 live on Aptos mainnet
         (<code>{shortAddr(DESNET_PACKAGE)}</code>). 19 Move modules, ~10.6k
-        LoC. Audited across seven external review rounds (R1 → R7) and four
-        parallel pre-deploy paranoid agents.
+        LoC. Reviewed across seven multi-LLM panel rounds (R1 → R7) and four
+        parallel pre-deploy paranoid LLM agents.
       </p>
-      <p className="muted small">
-        The R1–R7 verdicts cover the on-chain Move package only. This frontend
-        ships its own self-audit pass and is not part of the external panel.
+      <p className="muted small" style={{ borderLeft: "3px solid #d97706", paddingLeft: 10 }}>
+        ⚠ The R1–R7 panels and the paranoid agents are{" "}
+        <strong>AI-generated reviews by LLMs (Claude, GPT, Gemini, DeepSeek,
+        Grok, Kimi, Qwen)</strong>, NOT professional security audits by a
+        licensed firm. They are development aids, not guarantees of correctness
+        or safety. The frontend (~10k LoC TS/React) ships its own self-audit
+        pass and is not part of any external panel either.
       </p>
       <p>
         <strong>License:</strong>{" "}
@@ -297,9 +301,16 @@ export function About() {
         Multisig 3/5 on <code>@origin</code> for the bootstrap publisher path.
       </p>
 
-      <h3>Audit</h3>
+      <h3>Audit (LLM panel — not formal)</h3>
+      <p className="muted small" style={{ borderLeft: "3px solid #d97706", paddingLeft: 10 }}>
+        ⚠ All "audit" entries below are <strong>multi-LLM panel reviews</strong>{" "}
+        (Gemini, DeepSeek, Grok, Claude, Kimi, Qwen) — not audits by a
+        licensed security firm. They are development aids, not professional
+        attestations. Treat verdicts as cross-model consensus signals, not
+        formal guarantees.
+      </p>
       <p>
-        External multi-LLM audit panel across seven rounds (R1 → R7).
+        Multi-LLM panel review across seven rounds (R1 → R7).
       </p>
       <ul>
         <li>
@@ -364,12 +375,48 @@ export function About() {
 
       <h3>Versions</h3>
       <ul>
-        <li><strong>v0.4</strong> — current mainnet. R7 audit 5/6 GREEN + 4/4 paranoid agents GREEN. Adds opinion + assets multi-tier. Tag <code>v0.4-mainnet-live</code>.</li>
-        <li><strong>v0.3.3</strong> — superseded by v0.4. R6 audit 5/6 GREEN.</li>
+        <li><strong>v0.4</strong> — current mainnet. R7 LLM panel 5/6 GREEN + 4/4 paranoid agents GREEN. Adds opinion + assets multi-tier. Tag <code>v0.4-mainnet-live</code>.</li>
+        <li><strong>v0.3.3</strong> — superseded by v0.4. R6 LLM panel 5/6 GREEN.</li>
         <li><strong>v0.3.2</strong> — superseded. Introduced two-phase settle infra and per-token voter history.</li>
         <li><strong>v0.3.1</strong> — superseded. Added <code>handle_fee_vault</code> (initial 50/50 split, later changed to 10/90).</li>
         <li><strong>v0.3.0</strong> — initial mainnet.</li>
       </ul>
+
+      <h3>Disclaimer</h3>
+      <div className="about-disclaimer">
+        <p>
+          DeSNet is <strong>experimental on-chain software</strong> built entirely
+          by <strong>one human and one AI (Claude, by Anthropic)</strong>. Every
+          Move module, every frontend line, and every "audit" submission was
+          produced by this two-person team. The R1–R7 reviews are{" "}
+          <strong>AI-generated cross-LLM consensus reviews, not professional
+          security audits</strong> by a licensed firm. They are aids to
+          development, not guarantees of correctness or safety.
+        </p>
+        <p>
+          Smart contracts may contain undiscovered bugs. Funds deposited into
+          opinion markets, AMM pools, LP staking, the handle-fee vault, or any
+          other on-chain component <strong>may be lost permanently</strong>.
+          The conservation invariant on opinion markets is asserted on chain
+          but does not protect against pool-drain-by-trade, MEV sandwiching, or
+          tax-burn losses.
+        </p>
+        <p>
+          There is{" "}
+          <strong>
+            no team, no company, no legal entity, no customer support, no
+            insurance fund, and no recourse mechanism
+          </strong>
+          . All code is published under The Unlicense (public domain).
+        </p>
+        <p>
+          <strong>Do not deposit more than you can afford to lose entirely.</strong>{" "}
+          Nothing on this site or in this protocol constitutes investment advice.
+        </p>
+        <p className="mute" style={{ marginTop: 12 }}>
+          Use at your own risk. You have been warned.
+        </p>
+      </div>
     </div>
   );
 }

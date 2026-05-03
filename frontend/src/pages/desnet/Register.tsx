@@ -27,13 +27,19 @@ export function Register() {
 
   const [handle, setHandle] = useState("");
   const [bio, setBio] = useState("");
+  // tokenName = free-form artistic display name, user-input (e.g. "Diamond
+  //              Hands Society", "Bull Run Club", not just "Alice Token").
+  // tokenSymbol = ALWAYS handle.toUpperCase() — deterministic 1:1 binding,
+  //              not user-overridable. ticker == handle is the protocol's
+  //              identity invariant.
   const [tokenName, setTokenName] = useState("");
-  const [tokenSymbol, setTokenSymbol] = useState("");
   const [tokenIconUri, setTokenIconUri] = useState("");
   const [tokenProjectUri, setTokenProjectUri] = useState("");
   const [avatarBytes, setAvatarBytes] = useState<Uint8Array | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarErr, setAvatarErr] = useState<string | null>(null);
+
+  const tokenSymbol = useMemo(() => handle.toUpperCase(), [handle]);
 
   const [registered, setRegistered] = useState<string | null | undefined>(undefined);
   const [taken, setTaken] = useState<boolean | null>(null);
@@ -185,7 +191,7 @@ export function Register() {
       </p>
 
       <label className="field">
-        <span>Handle</span>
+        <span>PID ticker (handle = ticker symbol)</span>
         <input
           value={handle}
           onChange={(e) => setHandle(e.target.value.toLowerCase())}
@@ -199,32 +205,28 @@ export function Register() {
           ) : taken === true ? (
             <span className="error">@{handle} is taken</span>
           ) : taken === false ? (
-            <span className="ok">@{handle} is available</span>
+            <span className="ok">
+              @{handle} available · ticker locked to <strong>${tokenSymbol}</strong>
+            </span>
           ) : (
-            "lower-case a-z, digits, underscore. Must start with a letter."
+            "lower-case a-z, digits, underscore. Must start with a letter. Ticker symbol = handle (always, no override)."
           )}
         </small>
       </label>
 
-      <div className="grid-2">
-        <label className="field">
-          <span>Token name</span>
-          <input
-            value={tokenName}
-            onChange={(e) => setTokenName(e.target.value)}
-            placeholder={handle ? handle.toUpperCase() + " Token" : "Alice Token"}
-          />
-        </label>
-        <label className="field">
-          <span>Token symbol</span>
-          <input
-            value={tokenSymbol}
-            onChange={(e) => setTokenSymbol(e.target.value.toUpperCase())}
-            placeholder={handle ? handle.toUpperCase() : "ALICE"}
-            maxLength={10}
-          />
-        </label>
-      </div>
+      <label className="field">
+        <span>Token name (display only — be creative)</span>
+        <input
+          value={tokenName}
+          onChange={(e) => setTokenName(e.target.value)}
+          placeholder="Diamond Hands Society / Bull Run Club / Singularity Coin / …"
+        />
+        <small className="muted">
+          The human-readable display name shown by wallets. Distinct from the
+          ticker symbol (<code>${tokenSymbol || "HANDLE"}</code>, always = handle).
+          Don't just put "{handle ? `${handle.charAt(0).toUpperCase()}${handle.slice(1)}` : "Alice"} Token" — make it a brand.
+        </small>
+      </label>
 
       <label className="field">
         <span>Bio</span>
@@ -239,13 +241,16 @@ export function Register() {
       </label>
 
       <label className="field">
-        <span>Avatar (≤8 KB after base64)</span>
+        <span>Avatar (optional · ≤8 KB after base64)</span>
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
           onChange={(e) => onPickAvatar(e.target.files?.[0] ?? null)}
         />
         {avatarErr && <small className="error">{avatarErr}</small>}
+        {!avatarErr && !avatarPreview && (
+          <small className="muted">Skip if you don't have an image — register without avatar is fine and you can set it later on your profile page.</small>
+        )}
         {avatarPreview && (
           <img
             src={avatarPreview}

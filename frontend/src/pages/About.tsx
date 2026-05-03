@@ -172,11 +172,11 @@ export function AboutPage() {
 
       <div className="about-grid">
         <div className="about-stat">
-          <div className="big">1</div>
+          <div className="big">{POOL_FEE_BPS}</div>
           <div className="label">BPS LP FEE</div>
         </div>
         <div className="about-stat">
-          <div className="big">9</div>
+          <div className="big">10</div>
           <div className="label">ON-CHAIN MODULES</div>
         </div>
         <div className="about-stat">

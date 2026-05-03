@@ -1,7 +1,14 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { WalletProvider } from "./wallet/Provider";
+
+// Legacy /desnet/opinion/:author/:seq → new /desnet/social/opinion/:author/:seq.
+// Kept so old shared links don't 404.
+function LegacyOpinionRedirect() {
+  const { author, seq } = useParams<{ author: string; seq: string }>();
+  return <Navigate to={`/desnet/social/opinion/${author}/${seq}`} replace />;
+}
 
 // Lazy routes — each page is its own chunk and its own RPC pool. Pages
 // that aren't mounted don't contribute any traffic to the per-IP budget.
@@ -57,6 +64,18 @@ const DesnetAbout = lazy(() =>
 );
 const DesnetOpinion = lazy(() =>
   import("./pages/desnet/Opinion").then((m) => ({ default: m.Opinion })),
+);
+const DesnetMyProfile = lazy(() =>
+  import("./pages/desnet/MyProfile").then((m) => ({ default: m.MyProfile })),
+);
+const DesnetSocialShell = lazy(() =>
+  import("./pages/desnet/SocialShell").then((m) => ({ default: m.DesnetSocialShell })),
+);
+const DesnetFeeds = lazy(() =>
+  import("./pages/desnet/Feeds").then((m) => ({ default: m.Feeds })),
+);
+const DesnetOpinionList = lazy(() =>
+  import("./pages/desnet/OpinionList").then((m) => ({ default: m.OpinionList })),
 );
 
 const DShell = lazy(() => import("./pages/D").then((m) => ({ default: m.DShell })));
@@ -117,6 +136,15 @@ export function App() {
               <Route path="swap" element={wrap(<DesnetSwap />)} />
               <Route path="liquidity" element={wrap(<DesnetLiquidity />)} />
               <Route path="portfolio" element={wrap(<DesnetPortfolio />)} />
+              <Route path="about" element={wrap(<DesnetAbout />)} />
+            </Route>
+
+            <Route path="desnet/social" element={wrap(<DesnetSocialShell />)}>
+              <Route index element={<Navigate to="me" replace />} />
+              <Route path="me" element={wrap(<DesnetMyProfile />)} />
+              <Route path="feeds" element={wrap(<DesnetFeeds />)} />
+              <Route path="opinion" element={wrap(<DesnetOpinionList />)} />
+              <Route path="opinion/:author/:seq" element={wrap(<DesnetOpinion />)} />
             </Route>
 
             <Route path="desnet/p/:handle" element={wrap(<DesnetProfileShell />)}>
@@ -125,7 +153,15 @@ export function App() {
               <Route path="about" element={wrap(<DesnetAbout />)} />
             </Route>
 
-            <Route path="desnet/opinion/:author/:seq" element={wrap(<DesnetOpinion />)} />
+            {/* Legacy direct opinion link — redirect to social-section path */}
+            <Route
+              path="desnet/opinion/:author/:seq"
+              element={<LegacyOpinionRedirect />}
+            />
+            <Route
+              path="desnet/me"
+              element={<Navigate to="/desnet/social/me" replace />}
+            />
 
             <Route path="d" element={wrap(<DShell />)}>
               <Route index element={wrap(<DOverview />)} />

@@ -1,0 +1,37 @@
+[package]
+name = "DarbitexDesnetArb"
+version = "0.1.0"
+authors = ["Rera", "Claude (Anthropic)"]
+license = "Unlicense"
+
+# Script-only package. NOT meant to be published. Compile produces a .mv
+# script bytecode that gets bundled into the darbitex-final frontend
+# (/public/scripts/) and submitted as a one-off Move script tx by user
+# wallets. Atomic 2-leg arb between DeSNet AMM + Darbitex AMM, frontend-only,
+# no on-chain package deploy involved.
+
+[addresses]
+desnet = "0x7ba7ee5a93694aa5943f4ef344737d95795d51395e3d65a1b732c776d34be724"
+origin = "0x000073c4dd3fa51260b4cd8b6878191214df1e6dcd4dbcd1ed906c05c3aaa9a9"
+desnet_claimer = "0x000073c4dd3fa51260b4cd8b6878191214df1e6dcd4dbcd1ed906c05c3aaa9a9"
+darbitex = "0xc988d39a4a27b26e1d659431a0c5828f3862c155d1c331386cd5974298dd78dd"
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dependencies.AptosStdlib]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-stdlib"
+
+# DeSNet mainnet package — script imports `desnet::amm` for the
+# swap_apt_for_token / swap_token_for_apt entries.
+[dependencies.Desnet]
+local = "/home/rera/desnet"
+
+# Darbitex mainnet package — script imports `darbitex::pool` for
+# pool::swap (FA-in/FA-out).
+[dependencies.DarbitexFinal]
+local = "/home/rera/darbitex-final"

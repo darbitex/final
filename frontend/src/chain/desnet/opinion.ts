@@ -246,6 +246,106 @@ export async function previewTax(rpc: RpcPool, amount: bigint, taxBps: number): 
   return BigInt(r[0]);
 }
 
+// ============ Atomic balanced+swap script (1-tx pure-side exposure) ============
+//
+// Bundled Move script at /scripts/buy_one_sided.mv composes deposit_balanced
+// + swap_<unwanted>_for_<wanted> in a single atomic tx. User commits `amount`
+// $creator_token, ends with ~2× wanted side (vs deposit_pick_side which
+// donates half to pool).
+
+const BUY_ONE_SIDED_SCRIPT_URL = "/scripts/buy_one_sided.mv";
+
+let _buyScriptCache: Promise<Uint8Array> | null = null;
+export function loadBuyOneSidedScript(): Promise<Uint8Array> {
+  if (_buyScriptCache) return _buyScriptCache;
+  _buyScriptCache = (async () => {
+    const r = await fetch(BUY_ONE_SIDED_SCRIPT_URL);
+    if (!r.ok) {
+      _buyScriptCache = null;
+      throw new Error(`Failed to load buy_one_sided script bytecode: ${r.status}`);
+    }
+    return new Uint8Array(await r.arrayBuffer());
+  })();
+  return _buyScriptCache;
+}
+
+/**
+ * Preview buy_one_sided side-effects against current pool state.
+ * Returns the EXPECTED outcome and recommended min_swap_out (with slippage applied).
+ *
+ * Math:
+ *   - Leg 1 (deposit_balanced): vault +amount, mint amount YAY + amount NAY
+ *   - Leg 2 (swap unwanted → wanted): receives `swap_out` of wanted side
+ *     where swap_out = compute_amount_out(unwanted_pool, wanted_pool, amount)
+ *   - User end-state: amount + swap_out of wanted side (vs amount only via
+ *     deposit_pick_side — savings = swap_out / amount × 100%)
+ *
+ * Tax math:
+ *   - Leg 1 deposit tax = compute_tax(amount, tax_bps)
+ *   - Leg 2 swap tax = compute_tax(spot_equiv(amount), tax_bps)
+ *     where spot_equiv = amount × wanted_pool / (yay_pool + nay_pool)
+ *   - Total = both burns from $creator_token (separate from amount itself)
+ */
+export type BuyOneSidedPreview = {
+  /** Final wanted-side balance increase (raw). */
+  wantedSideOut: bigint;
+  /** Multiplier vs deposit_pick_side (e.g. 2.0 = 2x assets). */
+  multiplier: number;
+  /** Recommended slippage-adjusted floor for the swap leg. */
+  minSwapOut: bigint;
+  /** Tax on leg 1 (deposit_balanced), in $creator_token raw units. */
+  depositTax: bigint;
+  /** Tax on leg 2 (swap), in $creator_token raw units. */
+  swapTax: bigint;
+  /** Total $creator_token needed = amount + depositTax + swapTax. */
+  totalCreatorTokenNeeded: bigint;
+  /** Implied effective price per wanted-side token (in $creator_token). */
+  effectivePricePerToken: number;
+  /** Will the swap leg trigger E_ZERO_OUTPUT (out=0)? */
+  zeroOutputRisk: boolean;
+};
+
+export function previewBuyOneSided(
+  poolYay: bigint,
+  poolNay: bigint,
+  amount: bigint,
+  pureYay: boolean,
+  taxBps: number = DEFAULT_TAX_BPS,
+  slipBps: number = 200, // 2% default slippage
+): BuyOneSidedPreview {
+  const wantedPool = pureYay ? poolYay : poolNay;
+  const unwantedPool = pureYay ? poolNay : poolYay;
+
+  // Leg 2 simulation: swap `amount` of unwanted → wanted.
+  // Note: deposit_balanced bumps NEITHER pool (mints fresh, both to user).
+  // So pool reserves at time of swap = current reserves (no shift from leg 1).
+  const swapOut = computeAmountOutLocal(unwantedPool, wantedPool, amount);
+  const minSwapOut = (swapOut * BigInt(10000 - slipBps)) / 10000n;
+  const zeroOutputRisk = swapOut === 0n;
+
+  const depositTax = computeTaxLocal(amount, taxBps);
+  const denom = poolYay + poolNay;
+  const spotEquiv = denom > 0n ? (amount * wantedPool) / denom : 0n;
+  const swapTax = computeTaxLocal(spotEquiv, taxBps);
+  const totalCreatorTokenNeeded = amount + depositTax + swapTax;
+
+  const wantedSideOut = amount + swapOut;
+  const multiplier = amount > 0n ? Number(wantedSideOut * 10000n / amount) / 10000 : 0;
+  const effectivePricePerToken =
+    wantedSideOut > 0n ? Number(totalCreatorTokenNeeded * 10000n / wantedSideOut) / 10000 : 0;
+
+  return {
+    wantedSideOut,
+    multiplier,
+    minSwapOut,
+    depositTax,
+    swapTax,
+    totalCreatorTokenNeeded,
+    effectivePricePerToken,
+    zeroOutputRisk,
+  };
+}
+
 // ============ Pure helpers (no RPC) ============
 
 // Mirror compute_amount_out for instant preview (no RPC roundtrip).

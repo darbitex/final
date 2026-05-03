@@ -444,17 +444,17 @@ const MODE_AMOUNT_LABEL: Record<TradeMode, (h: string) => string> = {
 
 const MODE_DESCRIPTION: Record<TradeMode, (h: string) => string> = {
   "deposit-yay": (h) =>
-    `Pull $${h} from your wallet → vault. Mint amount YAY + amount NAY. You keep the YAY; pool absorbs the NAY (price moves toward NAY-cheap).`,
+    `Pull $${h} from your wallet → vault. Mint amount YAY + amount NAY. You keep the YAY; pool absorbs the NAY (price moves toward NAY-cheap). ⚠ This donates HALF your mint (the NAY side) to pool depth — for pure YAY exposure, use 'Balanced' + 'Swap NAY → YAY' instead to get ~2× the YAY for the same $${h}.`,
   "deposit-nay": (h) =>
-    `Pull $${h} from your wallet → vault. Mint amount YAY + amount NAY. You keep the NAY; pool absorbs the YAY (price moves toward YAY-cheap).`,
+    `Pull $${h} from your wallet → vault. Mint amount YAY + amount NAY. You keep the NAY; pool absorbs the YAY (price moves toward YAY-cheap). ⚠ This donates HALF your mint (the YAY side) to pool depth — for pure NAY exposure, use 'Balanced' + 'Swap YAY → NAY' instead to get ~2× the NAY for the same $${h}.`,
   balanced: (h) =>
-    `Pull $${h} from your wallet → vault. Mint amount YAY + amount NAY. You receive BOTH sides 1:1. Pool reserves unchanged.`,
-  "swap-y2n": () =>
-    `Trade YAY for NAY through the x*y=k pool. Spot-equivalent tax in $creator_token burned. Slippage tolerance enforced server-side.`,
-  "swap-n2y": () =>
-    `Trade NAY for YAY through the x*y=k pool. Spot-equivalent tax in $creator_token burned. Slippage tolerance enforced server-side.`,
+    `Pull $${h} from your wallet → vault. Mint amount YAY + amount NAY. You receive BOTH sides 1:1. Pool reserves unchanged. Best primitive for accumulating a redeemable pair, or as the first leg before a swap.`,
+  "swap-y2n": (h) =>
+    `Trade YAY for NAY through the x*y=k pool. Spot-equivalent tax in $${h} burned (separate from amount_in — you must hold $${h} in your wallet for the tax burn). Slippage tolerance enforced server-side.`,
+  "swap-n2y": (h) =>
+    `Trade NAY for YAY through the x*y=k pool. Spot-equivalent tax in $${h} burned (separate from amount_in — you must hold $${h} in your wallet for the tax burn). Slippage tolerance enforced server-side.`,
   redeem: (h) =>
-    `Burn amount YAY + amount NAY from your wallet. Receive amount $${h} back from the vault, minus the tax skim. Always-exit guarantee.`,
+    `Burn amount YAY + amount NAY from your wallet. Receive amount $${h} back from the vault, minus the tax skim. Always-exit guarantee. Tax comes out of vault output — you do NOT need extra $${h} in your wallet.`,
 };
 
 // ============ Per-mode preview + validation ============
@@ -477,14 +477,15 @@ function previewFor(
   if (amountRaw <= 0n) return { ok: false, reason: "Amount must be > 0.", lines };
 
   if (mode === "deposit-yay" || mode === "deposit-nay") {
-    if (bal.creator < amountRaw) {
+    const tax = computeTaxLocal(amountRaw, snap.taxBps);
+    const totalNeeded = amountRaw + tax;
+    if (bal.creator < totalNeeded) {
       return {
         ok: false,
-        reason: `Insufficient $creator balance (have ${formatTokenAmount(bal.creator)}, need ${formatTokenAmount(amountRaw)}).`,
+        reason: `Insufficient $creator balance (have ${formatTokenAmount(bal.creator)}, need ${formatTokenAmount(amountRaw)} for vault + ${formatTokenAmount(tax)} for tax burn = ${formatTokenAmount(totalNeeded)} total).`,
         lines,
       };
     }
-    const tax = computeTaxLocal(amountRaw, snap.taxBps);
     lines.push({ kind: "info", text: `Vault grows by ${formatTokenAmount(amountRaw)}` });
     lines.push({
       kind: "info",
@@ -498,14 +499,15 @@ function previewFor(
   }
 
   if (mode === "balanced") {
-    if (bal.creator < amountRaw) {
+    const tax = computeTaxLocal(amountRaw, snap.taxBps);
+    const totalNeeded = amountRaw + tax;
+    if (bal.creator < totalNeeded) {
       return {
         ok: false,
-        reason: `Insufficient $creator balance (have ${formatTokenAmount(bal.creator)}, need ${formatTokenAmount(amountRaw)}).`,
+        reason: `Insufficient $creator balance (have ${formatTokenAmount(bal.creator)}, need ${formatTokenAmount(amountRaw)} for vault + ${formatTokenAmount(tax)} for tax burn = ${formatTokenAmount(totalNeeded)} total).`,
         lines,
       };
     }
-    const tax = computeTaxLocal(amountRaw, snap.taxBps);
     lines.push({ kind: "info", text: `Vault grows by ${formatTokenAmount(amountRaw)}` });
     lines.push({ kind: "info", text: `You receive ${formatTokenAmount(amountRaw)} YAY + ${formatTokenAmount(amountRaw)} NAY (pool reserves unchanged)` });
     lines.push({ kind: "info", text: `Additional ${formatTokenAmount(tax)} $creator burned (tax)` });
@@ -539,7 +541,7 @@ function previewFor(
     if (bal.creator < tax) {
       return {
         ok: false,
-        reason: `Insufficient $creator for tax (have ${formatTokenAmount(bal.creator)}, need ${formatTokenAmount(tax)}).`,
+        reason: `Insufficient $creator for swap tax. Swaps burn ${formatTokenAmount(tax)} $creator (spot-equivalent of your ${haveLabel} input). You hold ${formatTokenAmount(bal.creator)}. Acquire some $creator first (e.g. via /desnet/swap APT→$creator), then retry.`,
         lines,
       };
     }
