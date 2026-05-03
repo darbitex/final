@@ -11,6 +11,17 @@ import {
   mimeOfFile,
   nextSeq,
 } from "../../chain/desnet/mint";
+import {
+  CREATE_OPINION_MINT_FN,
+  DEFAULT_TAX_BPS,
+  MAX_INITIAL_MC,
+  MIN_INITIAL_MC,
+  buildCreateOpinionMintArgs,
+  formatTokenAmount,
+  marketExists,
+  validateInitialMc,
+  wholeToRaw,
+} from "../../chain/desnet/opinion";
 import { handleOf, handleToWallet, deriveProfileAddress } from "../../chain/desnet/profile";
 import { tokenMetadataAddr } from "../../chain/desnet/amm";
 import {
@@ -150,6 +161,7 @@ export function Feed() {
       {isMyProfile && (
         <Compose
           authorPid={author.pidAddr}
+          authorHandle={author.handle}
           onPosted={() => setFeedTick((t) => t + 1)}
         />
       )}
@@ -187,7 +199,15 @@ type ComposeMode = "original" | "voice" | "remix";
 
 type Ref = { author: string; seq: number; handle: string };
 
-function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => void }) {
+function Compose({
+  authorPid,
+  authorHandle,
+  onPosted,
+}: {
+  authorPid: string;
+  authorHandle: string;
+  onPosted: () => void;
+}) {
   const { signAndSubmitTransaction } = useWallet();
 
   const [text, setText] = useState("");
@@ -205,6 +225,28 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
   const [resolvedRef, setResolvedRef] = useState<Ref | null>(null);
   const [refError, setRefError] = useState<string | null>(null);
   const [refResolving, setRefResolving] = useState(false);
+
+  // ============ Opinion-mint toggle (v0.4) ============
+  const [opinionEnabled, setOpinionEnabled] = useState(false);
+  const [opinionMcInput, setOpinionMcInput] = useState("1000000"); // whole tokens, default = MIN
+  const [creatorTokenMeta, setCreatorTokenMeta] = useState<string | null>(null);
+  const [creatorTokenBalance, setCreatorTokenBalance] = useState<bigint | null>(null);
+
+  // Resolve author's $creator_token metadata once — needed for balance check
+  // before they can attach an opinion market.
+  useEffect(() => {
+    let cancelled = false;
+    tokenMetadataAddr(rpc, authorHandle)
+      .then((m) => {
+        if (!cancelled) setCreatorTokenMeta(m);
+      })
+      .catch(() => {
+        if (!cancelled) setCreatorTokenMeta(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authorHandle]);
 
   useEffect(() => {
     setResolvedRef(null);
@@ -355,6 +397,21 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
   // wallet's primary store, so we read balances against `myWallet`. Map key
   // is the FA metadata addr; grouping happens automatically by Map dedupe.
   const myWallet = useAddress();
+
+  // Opinion-mint balance check: poll the author wallet's $creator_token
+  // store. The bootstrap pulls `opinion_initial_mc` from the author's
+  // primary store, so the wallet posting must hold at least that much.
+  useEffect(() => {
+    let cancelled = false;
+    if (!myWallet || !creatorTokenMeta || !opinionEnabled) {
+      setCreatorTokenBalance(null);
+      return;
+    }
+    fetchFaBalance(myWallet, creatorTokenMeta)
+      .then((b) => { if (!cancelled) setCreatorTokenBalance(b); })
+      .catch(() => { if (!cancelled) setCreatorTokenBalance(0n); });
+    return () => { cancelled = true; };
+  }, [myWallet, creatorTokenMeta, opinionEnabled]);
   const [tipBalances, setTipBalances] = useState<Map<string, bigint>>(new Map());
   const tipMetasKey = useMemo(
     () => tipRows.map((r) => r.resolvedTokenMeta ?? "").filter(Boolean).join(","),
@@ -450,6 +507,24 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
     (r) => r.resolvedRecipient && r.resolvedTokenMeta && Number(r.amountInput) > 0,
   );
   const tipsAffordable = tipInsufficient.size === 0;
+
+  // Opinion validation — only enforced when opinionEnabled.
+  const opinionMcRaw: bigint | null = useMemo(() => {
+    if (!opinionEnabled) return null;
+    try {
+      return wholeToRaw(opinionMcInput);
+    } catch {
+      return null;
+    }
+  }, [opinionEnabled, opinionMcInput]);
+  const opinionMcValid = opinionMcRaw !== null && validateInitialMc(opinionMcRaw).ok;
+  const opinionAffordable =
+    opinionMcRaw !== null &&
+    creatorTokenBalance !== null &&
+    creatorTokenBalance >= opinionMcRaw;
+  const opinionOk =
+    !opinionEnabled || (opinionMcValid && opinionAffordable);
+
   const canPost =
     !!text.trim() &&
     textBytes <= CONTENT_MAX_BYTES &&
@@ -457,6 +532,7 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
     refOk &&
     tipsOk &&
     tipsAffordable &&
+    opinionOk &&
     !submitting;
 
   // Note (M3 audit follow-up): no AbortController needed. `submit()` captures
@@ -524,7 +600,7 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
           amount: BigInt(Math.floor(Number(r.amountInput) * 1e8)), // 8 decimals (APT + every $TOKEN)
         }));
 
-      const args = buildCreateMintArgs({
+      const baseInput = {
         contentText: text,
         inline,
         assetMasterAddr,
@@ -534,10 +610,23 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
         mentions: mentionAddrs,
         tickers: tickerPids,
         tips: tipPayload,
-      });
-      const result = await signAndSubmitTransaction({
-        data: { function: CREATE_MINT_FN, typeArguments: [], functionArguments: args },
-      });
+      };
+
+      let result;
+      if (opinionEnabled && opinionMcRaw !== null) {
+        const args = buildCreateOpinionMintArgs({
+          ...baseInput,
+          opinionInitialMc: opinionMcRaw,
+        });
+        result = await signAndSubmitTransaction({
+          data: { function: CREATE_OPINION_MINT_FN, typeArguments: [], functionArguments: args },
+        });
+      } else {
+        const args = buildCreateMintArgs(baseInput);
+        result = await signAndSubmitTransaction({
+          data: { function: CREATE_MINT_FN, typeArguments: [], functionArguments: args },
+        });
+      }
       setLastTx(result.hash);
       setText("");
       setTagsInput("");
@@ -549,6 +638,8 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
       setMentionsInput("");
       setTickersInput("");
       setTipRows([]);
+      setOpinionEnabled(false);
+      setOpinionMcInput("1000000");
       onPosted();
     } catch (e) {
       setError((e as Error).message ?? String(e));
@@ -675,6 +766,70 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
           </small>
         )}
       </label>
+
+      <fieldset className="lock-pick">
+        <legend>Opinion market (v0.4)</legend>
+        <label>
+          <input
+            type="checkbox"
+            checked={opinionEnabled}
+            onChange={(e) => setOpinionEnabled(e.target.checked)}
+          />{" "}
+          Attach a YAY/NAY market to this mint
+        </label>
+        {opinionEnabled && (
+          <div style={{ marginTop: 8 }}>
+            <p className="muted small">
+              Atomic <code>create_opinion_mint</code>: bootstraps a perpetual{" "}
+              <code>x &times; y = k</code> market denominated in{" "}
+              <code>${authorHandle}</code>. Pool seeds with{" "}
+              <code>initial_mc</code> YAY + <code>initial_mc</code> NAY; vault
+              escrows <code>initial_mc</code> ${authorHandle}. Tax{" "}
+              {DEFAULT_TAX_BPS / 100}% of every trade burns{" "}
+              ${authorHandle} — fixed, not configurable.
+            </p>
+            <label className="field">
+              <span>
+                initial_mc (whole ${authorHandle}, range{" "}
+                {Number(MIN_INITIAL_MC / 100_000_000n).toLocaleString()} –{" "}
+                {Number(MAX_INITIAL_MC / 100_000_000n).toLocaleString()})
+              </span>
+              <input
+                type="number"
+                min="1000000"
+                max="100000000"
+                step="1000000"
+                value={opinionMcInput}
+                onChange={(e) => setOpinionMcInput(e.target.value)}
+                placeholder="1000000"
+              />
+              <small className={opinionMcValid ? "muted" : "error"}>
+                {opinionMcRaw === null && "Enter a positive whole number."}
+                {opinionMcRaw !== null && !opinionMcValid && (
+                  <>Out of range. Must be between 1M and 100M ${authorHandle}.</>
+                )}
+                {opinionMcRaw !== null && opinionMcValid && (
+                  <>= {opinionMcRaw.toString()} raw (8 decimals)</>
+                )}
+              </small>
+            </label>
+            <small className={opinionAffordable || creatorTokenBalance === null ? "muted" : "error"}>
+              {creatorTokenBalance === null && "Loading your $" + authorHandle + " balance…"}
+              {creatorTokenBalance !== null && opinionMcRaw !== null && (
+                <>
+                  Wallet ${authorHandle} balance:{" "}
+                  <strong>{formatTokenAmount(creatorTokenBalance)}</strong>{" "}
+                  {!opinionAffordable && opinionMcValid && (
+                    <span className="error">
+                      — insufficient (need {formatTokenAmount(opinionMcRaw)})
+                    </span>
+                  )}
+                </>
+              )}
+            </small>
+          </div>
+        )}
+      </fieldset>
 
       <fieldset className="lock-pick">
         <legend>Tips (max 10)</legend>
@@ -896,11 +1051,27 @@ function FeedRow({
   const [pressEnabled, setPressEnabled] = useState<boolean | null>(null);
   const [pressCount, setPressCount] = useState<number>(0);
   const [iPressed, setIPressed] = useState<boolean>(false);
+  // Opinion-mint state — Pattern B detection via opinion::market_exists view.
+  // Null = still loading; true/false once resolved. Only mints (not voice/remix)
+  // can have opinion markets in v0.4 — but the view is cheap so we query for all.
+  const [opinionMarket, setOpinionMarket] = useState<boolean | null>(null);
   const [pressForm, setPressForm] = useState<{
     open: boolean;
     supplyCap: string;
     windowDays: string;
   }>({ open: false, supplyCap: "100", windowDays: "7" });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!decoded) {
+      setOpinionMarket(null);
+      return;
+    }
+    marketExists(rpc, decoded.author, decoded.seq).then((exists) => {
+      if (!cancelled) setOpinionMarket(exists);
+    });
+    return () => { cancelled = true; };
+  }, [decoded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1004,6 +1175,16 @@ function FeedRow({
     <div className="feed-row">
       <div className="feed-meta">
         <span className="verb-badge">{verbName}</span>{" "}
+        {opinionMarket && (
+          <a
+            href={`/desnet/opinion/${decoded.author}/${decoded.seq}`}
+            className="verb-badge"
+            style={{ background: "#1a4480", color: "#fff", textDecoration: "none" }}
+            title="Opinion market — click to trade YAY/NAY"
+          >
+            opinion · trade →
+          </a>
+        )}{" "}
         <span className="muted small">
           @{authorHandle} · #{decoded.seq} ·{" "}
           {new Date(entry.timestampSecs * 1000).toLocaleString()}
