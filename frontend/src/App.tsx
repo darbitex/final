@@ -28,6 +28,34 @@ const DisperseBody = lazy(() =>
   import("./pages/Disperse").then((m) => ({ default: m.DisperseBody })),
 );
 
+const DesnetShell = lazy(() =>
+  import("./pages/desnet/Shell").then((m) => ({ default: m.DesnetShell })),
+);
+const DesnetRegister = lazy(() =>
+  import("./pages/desnet/Register").then((m) => ({ default: m.Register })),
+);
+const DesnetSwap = lazy(() =>
+  import("./pages/desnet/Swap").then((m) => ({ default: m.Swap })),
+);
+const DesnetLiquidity = lazy(() =>
+  import("./pages/desnet/Liquidity").then((m) => ({ default: m.Liquidity })),
+);
+const DesnetPortfolio = lazy(() =>
+  import("./pages/desnet/Portfolio").then((m) => ({ default: m.Portfolio })),
+);
+const DesnetProfileShell = lazy(() =>
+  import("./pages/desnet/ProfileShell").then((m) => ({ default: m.ProfileShell })),
+);
+const DesnetProfile = lazy(() =>
+  import("./pages/desnet/Profile").then((m) => ({ default: m.Profile })),
+);
+const DesnetFeed = lazy(() =>
+  import("./pages/desnet/Feed").then((m) => ({ default: m.Feed })),
+);
+const DesnetAbout = lazy(() =>
+  import("./pages/desnet/About").then((m) => ({ default: m.About })),
+);
+
 const DShell = lazy(() => import("./pages/D").then((m) => ({ default: m.DShell })));
 const DOverview = lazy(() =>
   import("./pages/d/Overview").then((m) => ({ default: m.DOverview })),
@@ -78,6 +106,20 @@ export function App() {
               <Route index element={<Navigate to="factory" replace />} />
               <Route path="factory" element={wrap(<FactoryBody />)} />
               <Route path="disperse" element={wrap(<DisperseBody />)} />
+            </Route>
+
+            <Route path="desnet" element={wrap(<DesnetShell />)}>
+              <Route index element={<Navigate to="register" replace />} />
+              <Route path="register" element={wrap(<DesnetRegister />)} />
+              <Route path="swap" element={wrap(<DesnetSwap />)} />
+              <Route path="liquidity" element={wrap(<DesnetLiquidity />)} />
+              <Route path="portfolio" element={wrap(<DesnetPortfolio />)} />
+            </Route>
+
+            <Route path="desnet/p/:handle" element={wrap(<DesnetProfileShell />)}>
+              <Route index element={wrap(<DesnetProfile />)} />
+              <Route path="post" element={wrap(<DesnetFeed />)} />
+              <Route path="about" element={wrap(<DesnetAbout />)} />
             </Route>
 
             <Route path="d" element={wrap(<DShell />)}>

@@ -156,6 +156,61 @@ export const D_PARAMS = {
   APT_DECIMALS: 8,
 } as const;
 
+// DeSNet v0.3.3 — monolith package on Aptos mainnet (18 Move modules
+// at one address). Factory + governance + verbs all live under @desnet.
+// Multisig publisher @origin = 0x000073c4... (1/5, raise to 3/5 pending).
+export const DESNET_PACKAGE =
+  "0x7ba7ee5a93694aa5943f4ef344737d95795d51395e3d65a1b732c776d34be724";
+export const DESNET_ORIGIN_MULTISIG =
+  "0x000073c4dd3fa51260b4cd8b6878191214df1e6dcd4dbcd1ed906c05c3aaa9a9";
+
+// DESNET protocol token — registered as the `desnet` handle. The PID
+// NFT, the FA metadata, and the AMM/staking/vault objects spun out at
+// register_handle time. Pinned here so the DESNET shortcut on Page 1
+// loads without an extra view round-trip.
+export const DESNET_PID_NFT =
+  "0xfa4dd0513a60afe94e9dcafda75e50072ef9718b14b8a91a731f2d04d9fc3adf";
+export const DESNET_FA =
+  "0x44c1006d4d8dae79195fa396c71408514343a5c4b4627b6e7595f64d65b224e7";
+export const DESNET_AMM_POOL =
+  "0x5ba92cb1c4eb871b36eb4475b85763c390f8aa604946eb1ea26c10ee46c822a8";
+export const DESNET_LP_STAKING_POOL =
+  "0x983d04dd23cdaa139af36e79af464739e6ec9f13874c2f6dc329ee508389481b";
+export const DESNET_LP_EMISSION_RESERVE =
+  "0x19c83d5de114c22ca462029c1ec5069d3c9c3aaec7a8028aefb4a41942e1088b";
+export const DESNET_REACTION_EMISSION_RESERVE =
+  "0x4d7544844fa9b6eea0a2720b434627986fc7adc0339d39b851824a892be44e23";
+export const DESNET_APT_VAULT =
+  "0xfd45ced87cc95c4a9f2bba5c633b357d748d0b03071e19ff2b66529104774d09";
+
+// AMM swap fee, hardcoded in amm.move. 10 bps, 100% to LP. Distinct
+// from POOL_FEE_BPS (which is darbitex AMM, 5 bps).
+export const DESNET_AMM_FEE_BPS = 10;
+
+// Length-tier handle pricing in APT octas. Mirrors the constants in
+// profile.move::handle_fee_apt. Plus a 5 APT pool seed (octas) added on
+// top by factory::pool_seed_apt_amount and withdrawn separately during
+// register_handle. Both must be available in the wallet primary store.
+export const DESNET_HANDLE_FEE_OCTAS: Record<number, bigint> = {
+  1: 10_000_000_000n, // 100 APT
+  2: 5_000_000_000n,  //  50 APT
+  3: 2_000_000_000n,  //  20 APT
+  4: 1_000_000_000n,  //  10 APT
+  5: 500_000_000n,    //   5 APT
+  6: 100_000_000n,    //   1 APT
+};
+export const DESNET_POOL_SEED_OCTAS = 500_000_000n; // 5 APT
+export const DESNET_HANDLE_MAX_LEN = 64;
+
+// Per-handle limits sourced from profile.move + mint.move. Avatar is
+// inline base64 stored on the Profile resource; bio + content text are
+// stored as on-chain UTF-8 strings; inline media (≤ 8 KB) lives in the
+// Mint payload itself, anything larger goes through desnet::assets.
+export const DESNET_AVATAR_MAX_BYTES = 8 * 1024;
+export const DESNET_BIO_MAX_BYTES = 333;
+export const DESNET_CONTENT_TEXT_MAX_BYTES = 333;
+export const DESNET_INLINE_MEDIA_MAX_BYTES = 8 * 1024;
+
 // Hardcoded Move constant in arbitrage.move. 3-of-5 multisig.
 export const TREASURY =
   "0xdbce89113a975826028236f910668c3ff99c8db8981be6a448caa2f8836f9576";
@@ -263,6 +318,12 @@ export const TOKENS: Record<string, TokenConfig> = {
     decimals: 8,
     symbol: "DARBITEX",
     icon: "/tokens/darbitex.svg",
+  },
+  DESNET: {
+    meta: "0x44c1006d4d8dae79195fa396c71408514343a5c4b4627b6e7595f64d65b224e7",
+    decimals: 8,
+    symbol: "DESNET",
+    icon: "/tokens/desnet.svg",
   },
 };
 

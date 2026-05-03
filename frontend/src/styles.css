@@ -1202,3 +1202,82 @@ a:hover { text-decoration: underline; }
 .impact-good { color: #6eff8e; }
 .impact-warn { color: #ff8800; }
 .impact-bad  { color: #ff6b6b; font-weight: 600; }
+
+/* ============ DeSNet — pages/desnet/* ============ */
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field > span { color: #999; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.field > input, .field > textarea, .field > select {
+  background: #0a0a0a; border: 1px solid #222; color: #ddd;
+  padding: 8px 10px; border-radius: 6px; font: inherit;
+}
+.field > input:focus, .field > textarea:focus { outline: none; border-color: #ff8800; }
+.field > small { color: #777; font-size: 12px; }
+.field > small.error { color: #ff6b6b; }
+.field > small.ok { color: #6eff8e; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.inline-num { width: 60px; background: #0a0a0a; border: 1px solid #222; color: #ddd;
+  padding: 3px 6px; border-radius: 4px; font: inherit; }
+
+.lock-pick { border: 1px solid #1a1a1a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+.lock-pick legend { color: #999; font-size: 12px; text-transform: uppercase; }
+.lock-pick label { display: block; margin: 6px 0; }
+
+.swap-side { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 8px; padding: 12px; margin: 12px 0; }
+.swap-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.swap-row + .swap-row { margin-top: 10px; }
+.swap-token { font-weight: 600; padding-bottom: 8px; }
+.swap-token .link { display: block; font-size: 11px; font-weight: normal; }
+.flip { display: block; text-align: center; margin: 6px 0; }
+
+.position-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.position-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 6px;
+}
+.row-actions { display: flex; gap: 12px; }
+
+.profile-card .profile-head { display: flex; gap: 16px; align-items: center; }
+.avatar { width: 80px; height: 80px; border-radius: 12px; object-fit: cover; background: #1a1a1a; }
+.avatar-fallback { display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 600; color: #ff8800; background: #181818; }
+.profile-meta h2 { margin: 0 0 4px 0; }
+.profile-meta .bio { color: #ccc; margin: 8px 0 0 0; }
+.profile-stats { display: flex; gap: 24px; margin: 16px 0; }
+
+.compose-card textarea { width: 100%; background: #0a0a0a; border: 1px solid #222;
+  color: #ddd; padding: 10px; border-radius: 6px; font: inherit; resize: vertical; }
+.compose-card textarea:focus { outline: none; border-color: #ff8800; }
+
+.upload-progress { margin-top: 12px; padding: 10px; background: #0a0a0a;
+  border: 1px solid #1a1a1a; border-radius: 6px; }
+.upload-progress > div { color: #ddd; font-size: 13px; margin-bottom: 6px; }
+.upload-progress progress { width: 100%; }
+
+.feed-list { display: flex; flex-direction: column; gap: 10px; }
+.feed-row { padding: 12px; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 6px; }
+.feed-row-compact { padding: 8px 12px; }
+.feed-meta { margin-bottom: 8px; }
+.verb-badge { background: #181818; color: #ff8800; padding: 2px 6px; border-radius: 4px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.feed-text { color: #eee; white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+.feed-media { max-width: 100%; max-height: 400px; margin-top: 8px; border-radius: 6px; }
+.feed-tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { background: #181818; color: #999; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+.feed-actions { margin-top: 10px; display: flex; gap: 14px; }
+
+.about-card h3 { margin-top: 24px; color: #ff8800; }
+.about-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.about-table th, .about-table td { padding: 6px 8px; text-align: left;
+  border-bottom: 1px solid #161616; font-size: 13px; vertical-align: top; }
+.about-table th { color: #999; font-weight: normal; text-transform: uppercase; font-size: 11px; }
+.about-table code { color: #ff8800; }
+
+.card-stat { display: flex; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px solid #161616; font-size: 13px; }
+.card-stat:last-of-type { border-bottom: none; }
+
+.link { background: none; border: none; color: #ff8800; cursor: pointer;
+  padding: 0; font: inherit; text-decoration: underline; }
+.link.small { font-size: 11px; margin-left: 8px; }
+.link:hover { opacity: 0.8; }
