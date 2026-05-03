@@ -11,13 +11,6 @@
 // Frontend chooses the more profitable direction at preview time and
 // submits with that flag. Single tx — both legs revert together.
 
-import {
-  AccountAddress,
-  Bool,
-  MoveVector,
-  U64,
-  U8,
-} from "@aptos-labs/ts-sdk";
 import type { RpcPool } from "../rpc-pool";
 import {
   computeAmountOut as desnetComputeAmountOut,
@@ -263,17 +256,20 @@ export function buildArbScriptArgs(args: {
   minAptOut: bigint;
   minProfit: bigint;
   desnetFirst: boolean;
-}) {
+}): unknown[] {
+  // Use plain JS primitives — the wallet adapter accepts these via the
+  // SimpleEntryFunctionArgumentTypes union and bypasses the dual-ts-sdk-
+  // instance type clash that bites SDK typed wrappers (Bool/U64/etc).
   const handleBytes = new TextEncoder().encode(args.desnetHandle);
   return [
-    MoveVector.U8(Array.from(handleBytes)),
-    AccountAddress.fromString(args.darbitexPoolAddr),
-    AccountAddress.fromString(args.tokenMetaAddr),
-    new U64(args.aptIn),
-    new U64(args.minTokenMid),
-    new U64(args.minAptOut),
-    new U64(args.minProfit),
-    new Bool(args.desnetFirst),
+    Array.from(handleBytes),       // vector<u8>
+    args.darbitexPoolAddr,          // address as string
+    args.tokenMetaAddr,
+    args.aptIn.toString(),          // u64 as string
+    args.minTokenMid.toString(),
+    args.minAptOut.toString(),
+    args.minProfit.toString(),
+    args.desnetFirst,               // bool
   ];
 }
 
@@ -296,5 +292,3 @@ export async function buildArbTxData(args: Parameters<typeof buildArbScriptArgs>
   };
 }
 
-// Suppress unused warning if SDK helpers aren't used elsewhere in this file.
-export const _SDK_TYPES_UNUSED_GUARD = U8;

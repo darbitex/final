@@ -20,12 +20,6 @@ import { useAddress } from "../wallet/useConnect";
 import { fetchFaBalance } from "../chain/balance";
 import { createRpcPool } from "../chain/rpc-pool";
 import {
-  Bool,
-  MoveVector,
-  U64,
-} from "@aptos-labs/ts-sdk";
-import {
-  computeTaxLocal,
   creatorTokenOf,
   formatTokenAmount,
   loadBuyOneSidedScript,
@@ -35,7 +29,6 @@ import {
   vaultBalance,
   wholeToRaw,
 } from "../chain/desnet/opinion";
-import { AccountAddress } from "@aptos-labs/ts-sdk";
 
 const rpc = createRpcPool("opinion-inline");
 
@@ -163,18 +156,20 @@ export function OpinionInlineActions({
       // Atomic balanced+swap via bundled Move script. min_swap_out enforces
       // 2% slippage tolerance; aborts E_SLIPPAGE_EXCEEDED if pool moves.
       const bytecode = await loadBuyOneSidedScript();
+      // Cast `data as never` — wallet adapter's bundled ts-sdk has different
+      // ScriptArg types than the main ts-sdk; runtime accepts plain primitives.
       const result = await signAndSubmitTransaction({
         data: {
           bytecode,
           typeArguments: [],
           functionArguments: [
-            AccountAddress.fromString(authorPid),
-            new U64(BigInt(seq)),
-            new U64(amountRaw),
-            new U64(preview.minSwapOut),
-            new Bool(side === "YAY"),
+            authorPid,                      // address
+            seq.toString(),                 // u64
+            amountRaw.toString(),           // u64
+            preview.minSwapOut.toString(),  // u64
+            side === "YAY",                 // bool
           ],
-        },
+        } as never,
       });
       setLastTx(result.hash);
       setOpenForm(null);

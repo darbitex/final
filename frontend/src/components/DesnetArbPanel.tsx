@@ -50,11 +50,10 @@ export function DesnetArbPanel() {
   const [aptInInput, setAptInInput] = useState("");
   const [minProfitInput, setMinProfitInput] = useState("");
 
-  // Preview state
+  // Preview state — shape matches `fetchAndPreview` return type exactly.
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<{
-    best: ArbPreview;
-    both: { desnet_first: ArbPreview; darbitex_first: ArbPreview };
+    preview: { best: ArbPreview; both: { desnet_first: ArbPreview; darbitex_first: ArbPreview } };
     tokenMetaAddr: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +165,7 @@ export function DesnetArbPanel() {
 
   const profitable = preview !== null && preview.preview.best.profit > 0n;
   const sufficientBalance =
-    aptInRaw !== null && balApt.balance !== null && balApt.balance >= aptInRaw;
+    aptInRaw !== null && balApt.raw >= aptInRaw;
   const canSubmit =
     connected &&
     !!address &&
@@ -196,7 +195,9 @@ export function DesnetArbPanel() {
         minProfit: minProfitRaw,
         desnetFirst: preview.preview.best.direction === "desnet_first",
       });
-      const result = await signAndSubmitTransaction({ data });
+      // Cast: wallet adapter's bundled ts-sdk has different ScriptArg types
+      // than the main ts-sdk. Runtime accepts plain primitives + bytecode.
+      const result = await signAndSubmitTransaction({ data: data as never });
       setLastTx(result.hash);
     } catch (e) {
       setError(decodeArbError(e));
@@ -285,10 +286,10 @@ export function DesnetArbPanel() {
         />
         <small className="muted">
           Wallet APT balance:{" "}
-          {balApt.balance !== null
-            ? fromRaw(balApt.balance, APT.decimals).toString()
-            : "…"}{" "}
-          {aptInRaw !== null && balApt.balance !== null && balApt.balance < aptInRaw && (
+          {balApt.loading
+            ? "…"
+            : fromRaw(balApt.raw, APT.decimals).toString()}{" "}
+          {aptInRaw !== null && balApt.raw < aptInRaw && (
             <span className="error"> — insufficient.</span>
           )}
         </small>
@@ -297,7 +298,7 @@ export function DesnetArbPanel() {
       <button
         className="primary"
         onClick={scan}
-        disabled={previewing || !aptInRaw || !desnetHandle.trim() || !darbitexPoolAddr.trim()}
+        disabled={previewing || !aptInRaw || !desnetHandle.trim() || !effectivePoolAddr}
       >
         {previewing ? "Scanning…" : "Preview cycle"}
       </button>
@@ -330,7 +331,7 @@ export function DesnetArbPanel() {
                       {p.profit >= 0n ? "+" : ""}{fromRaw(p.profit, APT.decimals).toString()}
                       {aptPrice && (
                         <span className="muted small">
-                          {" "}({formatUsd(usdValueOf(p.profit, APT.decimals, aptPrice))})
+                          {" "}({formatUsd(usdValueOf(Number(fromRaw(p.profit, APT.decimals)), "APT", aptPrice))})
                         </span>
                       )}
                     </td>

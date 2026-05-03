@@ -5,7 +5,7 @@
 // a view fn returning the PidSyncSet contents (currently only `is_synced`
 // per-pair). Both deferred — see TODO comments below.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createRpcPool } from "../../chain/rpc-pool";
 import { MintActionBar } from "../../components/MintActionBar";

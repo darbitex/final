@@ -312,8 +312,11 @@ function TradePanel({ snap, onMutate }: { snap: MarketSnapshot; onMutate: () => 
     try {
       const fn = MODE_FN[mode];
       const args = MODE_ARGS_BUILDER[mode](snap, amountRaw, preview.minOut ?? 0n);
+      // Cast: args are plain primitives matching SimpleEntryFunctionArgumentTypes;
+      // the local typing as `unknown[]` is intentional to keep MOD_ARGS_BUILDER
+      // pluggable. Wallet adapter accepts the runtime shape.
       const r = await signAndSubmitTransaction({
-        data: { function: fn, typeArguments: [], functionArguments: args },
+        data: { function: fn, typeArguments: [], functionArguments: args as never[] },
       });
       setLastTx(r.hash);
       setAmountInput("");
@@ -403,7 +406,7 @@ function TradePanel({ snap, onMutate }: { snap: MarketSnapshot; onMutate: () => 
 
 // ============ Mode tables ============
 
-const MODE_FN: Record<TradeMode, string> = {
+const MODE_FN: Record<TradeMode, `${string}::${string}::${string}`> = {
   "deposit-yay": DEPOSIT_PICK_SIDE_FN,
   "deposit-nay": DEPOSIT_PICK_SIDE_FN,
   balanced: DEPOSIT_BALANCED_FN,
