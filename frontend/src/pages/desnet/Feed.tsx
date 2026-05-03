@@ -484,14 +484,15 @@ function Compose({ authorPid, onPosted }: { authorPid: string; onPosted: () => v
       if (mediaMode === "inline" && file && fileMime != null) {
         inline = { mime: fileMime, bytes: await readFileBytes(file) };
       } else if (mediaMode === "asset" && file && fileMime != null) {
+        if (!myWallet) throw new Error("Connect a wallet first.");
         const orch = getOrchestratorByTier(pickedTier);
         const bytes = await readFileBytes(file);
-        // Lazy import the Aptos client off the rpc pool (its `primary` field).
         const aptos = rpc.primary;
         const res = await orch.upload({
           bytes,
           mime: fileMime,
           creatorPid: authorPid,
+          uploaderAddr: myWallet,
           submit: signAndSubmitTransaction as Parameters<typeof orch.upload>[0]["submit"],
           aptos,
           onProgress: setProgress,

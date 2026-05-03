@@ -14,3 +14,4 @@ export * from "./assetsOrchestrator";
 export * from "./history";
 export * from "./tokenIcon";
 export * from "./format";
+export * from "./sha3";

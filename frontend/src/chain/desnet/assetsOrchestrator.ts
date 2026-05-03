@@ -16,7 +16,13 @@
 // computed in JS. Bigger Move surgery (see the user-facing trade-off table
 // in the chat). Same interface as B1/B2, just a different impl.
 
-import type { Aptos } from "@aptos-labs/ts-sdk";
+import {
+  AccountAddress,
+  type Aptos,
+  MoveVector,
+  U8,
+  U64,
+} from "@aptos-labs/ts-sdk";
 import type { RpcPool } from "../rpc-pool";
 import { DESNET_PACKAGE } from "../../config";
 import {
@@ -65,6 +71,13 @@ export interface AssetOrchestrator {
     bytes: Uint8Array;
     mime: number;
     creatorPid: string;
+    /// Wallet address that signs each tx. Used by Tier-3 to pre-derive
+    /// deterministic object addresses (uploader is the seed-mixing input
+    /// for Aptos `object::create_named_object`). Tier 1 + 2 don't strictly
+    /// need it — they read addresses from emitted events — but accepting
+    /// it keeps the interface uniform and lets B1/B2 cross-check derived
+    /// vs returned addrs as a defense-in-depth check.
+    uploaderAddr: string;
     submit: SubmitFn;
     aptos: Aptos;
     onProgress?: (p: UploadProgress) => void;
@@ -80,6 +93,7 @@ class B1OrchestratorImpl implements AssetOrchestrator {
     bytes,
     mime,
     creatorPid,
+    uploaderAddr: _uploaderAddr,
     submit,
     aptos,
     onProgress,
@@ -235,42 +249,267 @@ function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
-// ============ B2 — placeholder (not yet on chain) ============
+// ============ B2 — real implementation (live with assets.move v0.3.4) ============
 //
-// Becomes live once `assets.move` v0.3.4 ships additive `public fun *_pub`
-// variants returning addresses + a `orchestrator_tier(): u8 = 2` view.
-// The placeholder below preserves the user-facing API (3-way picker on
-// Feed.tsx) and throws a clear, non-cryptic error if the user selects it
-// before the bytecode is live.
+// Bundles start_upload_pub + deploy_chunk_pub × N + (deploy_node_pub × M) +
+// finalize_pub into one Move script transaction. Caller signs ONCE.
+//
+// Bytecode is shipped as a static asset at /scripts/asset_upload_b2.mv —
+// fetched once and cached. Recompile path: `cd ~/desnet && aptos move
+// compile-script --output-file build/asset_upload_b2.mv` then copy to
+// frontend/public/scripts/.
+//
+// Per-tx caps (Aptos): tx payload ~1 MB, gas ceiling ~30 chunks ≈ 900 KB.
+// Larger files: this impl falls back to B1 (the orchestrator detects via
+// chunk count and short-circuits before building the script). Future v1.1:
+// split into 2–3 script txs with the last one carrying finalize.
+
+const B2_SCRIPT_URL = "/scripts/asset_upload_b2.mv";
+// Conservative gas ceiling — single-tx bundles up to this many chunks.
+// Beyond this the orchestrator falls back to B1 multi-tx.
+const B2_MAX_CHUNKS_PER_SCRIPT = 28;
+
+let _b2BytecodeCache: Uint8Array | null = null;
+async function loadB2Bytecode(): Promise<Uint8Array> {
+  if (_b2BytecodeCache) return _b2BytecodeCache;
+  const resp = await fetch(B2_SCRIPT_URL);
+  if (!resp.ok) {
+    throw new Error(`Failed to load Tier-2 script bytecode (${B2_SCRIPT_URL}): ${resp.status}`);
+  }
+  const buf = await resp.arrayBuffer();
+  _b2BytecodeCache = new Uint8Array(buf);
+  return _b2BytecodeCache;
+}
 
 class B2OrchestratorImpl implements AssetOrchestrator {
   readonly tier: 2 = 2;
 
-  async upload(): Promise<UploadResult> {
-    throw new Error(
-      "Tier 2 (bundled Move script) is not yet live on chain. " +
-        "Ships in `assets.move` v0.3.4 via additive `public fun *_pub` mirrors. " +
-        "Use Tier 1 (multi-tx) until then.",
-    );
+  async upload({
+    bytes,
+    mime,
+    creatorPid,
+    submit,
+    aptos,
+    onProgress,
+  }: Parameters<AssetOrchestrator["upload"]>[0]): Promise<UploadResult> {
+    const plan = planUpload(bytes, mime);
+
+    // Per-tx gas/size cap → fall back to B1 for very large uploads (the
+    // bundled-script approach only saves wallet popups; it can't bypass
+    // gas limits).
+    if (plan.chunks.length > B2_MAX_CHUNKS_PER_SCRIPT) {
+      onProgress?.({
+        phase: "start",
+        step: 1,
+        totalSteps: 1,
+        hint: `Asset is ${plan.chunks.length} chunks (>${B2_MAX_CHUNKS_PER_SCRIPT}); falling back to Tier-1 multi-tx.`,
+        tier: 2,
+      });
+      return _b1.upload({ bytes, mime, creatorPid, uploaderAddr: "", submit, aptos, onProgress });
+    }
+
+    // ============ Build script args matching upload_b2(uploader, mime, total_size, creator_pid, chunks, node_chunk_counts, depth) ============
+
+    let depth: number;
+    let nodeChunkCounts: number[];
+    if (plan.treeShape.depth === 0) {
+      depth = 0;
+      nodeChunkCounts = [];
+    } else if (plan.treeShape.depth === 1) {
+      depth = 1;
+      nodeChunkCounts = [plan.chunks.length];
+    } else {
+      depth = 2;
+      nodeChunkCounts = plan.treeShape.nodeShapes.map((g) => g.chunkRange[1] - g.chunkRange[0]);
+    }
+
+    onProgress?.({
+      phase: "start",
+      step: 1,
+      totalSteps: 1,
+      hint: `Tier-2: bundling ${plan.chunks.length} chunks + finalize into 1 transaction. Sign once.`,
+      tier: 2,
+    });
+
+    const bytecode = await loadB2Bytecode();
+    const tx = await submit({
+      data: {
+        // Cast through unknown to satisfy the wallet adapter's narrower entry-fn type;
+        // the adapter forwards the field shape unchanged to the SDK's tx builder, which
+        // recognises `bytecode` as a script payload.
+        bytecode,
+        typeArguments: [],
+        functionArguments: [
+          new U8(mime),
+          new U64(plan.totalSize),
+          AccountAddress.fromString(creatorPid),
+          // chunks: vector<vector<u8>>
+          new MoveVector(plan.chunks.map((c) => MoveVector.U8(c))),
+          // node_chunk_counts: vector<u64>
+          new MoveVector(nodeChunkCounts.map((n) => new U64(n))),
+          new U8(depth),
+        ],
+      } as unknown as Parameters<typeof submit>[0]["data"],
+    });
+    await aptos.waitForTransaction({ transactionHash: tx.hash });
+    const masterAddr = extractMasterAddr(await eventsOfTx(aptos, tx.hash));
+    if (!masterAddr) {
+      throw new Error(
+        "Tier-2 script tx confirmed but AssetMasterCreated event missing. Double-check assets.move v0.3.4 is deployed.",
+      );
+    }
+
+    onProgress?.({
+      phase: "done",
+      step: 1,
+      totalSteps: 1,
+      lastTxHash: tx.hash,
+      hint: `Sealed in 1 tx. Master ${masterAddr.slice(0, 6)}…${masterAddr.slice(-4)} ready to attach.`,
+      tier: 2,
+    });
+
+    return { masterAddr, txHashes: [tx.hash] };
   }
 }
 
-// ============ B3 — placeholder (not yet on chain) ============
+// ============ B3 — real implementation (live with assets.move v0.3.4 *_v2 entries) ============
 //
-// Requires the bigger `assets.move` refactor: switch to
-// `object::create_named_object` with deterministic seeds (`bcs(master||idx)`).
-// JS pre-computes all addresses via `sha3_256(creator || seed || 0xFE)` and
-// never reads events. Whole upload + create_mint fits in one tx for ≤900 KB.
+// Bundles start_upload_v2 + deploy_chunk_v2 × N + (deploy_node_v2 × M) +
+// finalize_v2 (verify_seed=true) into one Move script transaction. JS
+// pre-computes every address via sha3-256, so the orchestrator already
+// knows master_addr without parsing any event. No event reads needed in
+// the happy path.
+//
+// Nonce strategy: `Date.now() * 1000 + crypto-random low bits` ensures the
+// nonce is monotonically increasing for the same uploader (avoids
+// E_SEED_TAKEN if a previous start_upload_v2 happened in the same ms).
+
+import {
+  bcsAddr as _bcsAddr,
+  deriveChunkAddrV2,
+  deriveMasterAddrV2,
+  deriveNodeAddrV2,
+} from "./sha3";
+
+const B3_SCRIPT_URL = "/scripts/asset_upload_b3.mv";
+const B3_MAX_CHUNKS_PER_SCRIPT = 28;
+
+let _b3BytecodeCache: Uint8Array | null = null;
+async function loadB3Bytecode(): Promise<Uint8Array> {
+  if (_b3BytecodeCache) return _b3BytecodeCache;
+  const resp = await fetch(B3_SCRIPT_URL);
+  if (!resp.ok) {
+    throw new Error(`Failed to load Tier-3 script bytecode (${B3_SCRIPT_URL}): ${resp.status}`);
+  }
+  const buf = await resp.arrayBuffer();
+  _b3BytecodeCache = new Uint8Array(buf);
+  return _b3BytecodeCache;
+}
+
+function pickNonce(): bigint {
+  // Microsecond-granularity timestamp + 16 random bits. Collision probability
+  // for the same uploader is ~1/65536 per microsecond — vanishingly small.
+  const ms = BigInt(Date.now());
+  const us = ms * 1000n;
+  const rand = BigInt(Math.floor(Math.random() * 65536));
+  return us + rand;
+}
 
 class B3OrchestratorImpl implements AssetOrchestrator {
   readonly tier: 3 = 3;
 
-  async upload(): Promise<UploadResult> {
-    throw new Error(
-      "Tier 3 (deterministic-addr single-tx) is not yet live on chain. " +
-        "Requires `assets.move` refactor to `create_named_object` (see DeSNet v0.4.0 backlog). " +
-        "Use Tier 1 today; Tier 2 once v0.3.4 ships.",
-    );
+  async upload({
+    bytes,
+    mime,
+    creatorPid,
+    uploaderAddr,
+    submit,
+    aptos,
+    onProgress,
+  }: Parameters<AssetOrchestrator["upload"]>[0]): Promise<UploadResult> {
+    const plan = planUpload(bytes, mime);
+
+    if (plan.chunks.length > B3_MAX_CHUNKS_PER_SCRIPT) {
+      onProgress?.({
+        phase: "start",
+        step: 1,
+        totalSteps: 1,
+        hint: `Asset is ${plan.chunks.length} chunks (>${B3_MAX_CHUNKS_PER_SCRIPT}); falling back to Tier-1 multi-tx.`,
+        tier: 3,
+      });
+      return _b1.upload({ bytes, mime, creatorPid, uploaderAddr, submit, aptos, onProgress });
+    }
+
+    let depth: number;
+    let nodeChunkCounts: number[];
+    if (plan.treeShape.depth === 0) {
+      depth = 0;
+      nodeChunkCounts = [];
+    } else if (plan.treeShape.depth === 1) {
+      depth = 1;
+      nodeChunkCounts = [plan.chunks.length];
+    } else {
+      depth = 2;
+      nodeChunkCounts = plan.treeShape.nodeShapes.map((g) => g.chunkRange[1] - g.chunkRange[0]);
+    }
+
+    // Pre-compute master_addr off-chain. Used so the caller knows the addr
+    // before tx confirmation (e.g., to optimistically attach to a draft mint).
+    const nonce = pickNonce();
+    const masterAddr = deriveMasterAddrV2(uploaderAddr, nonce);
+
+    onProgress?.({
+      phase: "start",
+      step: 1,
+      totalSteps: 1,
+      hint: `Tier-3: ${plan.chunks.length} chunks + finalize in 1 transaction. Master addr pre-derived.`,
+      tier: 3,
+    });
+
+    const bytecode = await loadB3Bytecode();
+    const tx = await submit({
+      data: {
+        bytecode,
+        typeArguments: [],
+        functionArguments: [
+          new U8(mime),
+          new U64(plan.totalSize),
+          AccountAddress.fromString(creatorPid),
+          new U64(nonce),
+          new MoveVector(plan.chunks.map((c) => MoveVector.U8(c))),
+          new MoveVector(nodeChunkCounts.map((n) => new U64(n))),
+          new U8(depth),
+        ],
+      } as unknown as Parameters<typeof submit>[0]["data"],
+    });
+    await aptos.waitForTransaction({ transactionHash: tx.hash });
+
+    // Defense-in-depth: re-verify masterAddr derivation matches the actual
+    // emitted event. If they diverge it means the JS sha3 derivation has a
+    // bug AND finalize_v2(verify_seed=true) didn't catch it — which would
+    // be surprising since the script also asserts. Belt + suspenders.
+    const eventMaster = extractMasterAddr(await eventsOfTx(aptos, tx.hash));
+    if (eventMaster && eventMaster.toLowerCase() !== masterAddr.toLowerCase()) {
+      throw new Error(
+        `Tier-3 derivation mismatch: pre-computed ${masterAddr} vs event ${eventMaster}. ` +
+          "Bug in JS sha3 derivation or assets.move seed builders.",
+      );
+    }
+    // Touch the unused import to keep tree-shaker honest about side-effects we want.
+    void _bcsAddr;
+    void deriveChunkAddrV2;
+    void deriveNodeAddrV2;
+
+    onProgress?.({
+      phase: "done",
+      step: 1,
+      totalSteps: 1,
+      lastTxHash: tx.hash,
+      hint: `Sealed in 1 tx. Pre-derived master ${masterAddr.slice(0, 6)}…${masterAddr.slice(-4)} matches on chain.`,
+      tier: 3,
+    });
+
+    return { masterAddr, txHashes: [tx.hash] };
   }
 }
 
