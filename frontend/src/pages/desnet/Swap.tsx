@@ -50,6 +50,16 @@ export function Swap() {
     initialHandle === "desnet" ? DESNET_FA : null,
   );
   const [tokenSymbol, setTokenSymbol] = useState<string>(initialHandle.toUpperCase());
+
+  // Mirror `?h=` URL changes back into handle state. Without this the
+  // page silently ignores deep-link navigation while mounted (e.g. user
+  // clicks Profile → Swap link from a different handle's profile).
+  useEffect(() => {
+    const next = searchParams.get("h")?.toLowerCase().trim();
+    if (next && next !== handle) setHandle(next);
+    // Intentionally only react to URL changes, not local handle edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [poolReserves, setPoolReserves] = useState<{ apt: bigint; token: bigint } | null>(null);
 
   const [aptToToken, setAptToToken] = useState(true);

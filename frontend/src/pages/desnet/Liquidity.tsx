@@ -47,7 +47,12 @@ function readKnownPositions(handle: string, owner: string): string[] {
   if (typeof localStorage === "undefined") return [];
   try {
     const raw = localStorage.getItem(KEY_FOR_HANDLE(handle, owner));
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    // Defensive: tampered/old-shape storage could parse to a non-array.
+    // Validate before trusting downstream code that calls .includes/.push.
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string");
   } catch {
     return [];
   }
@@ -73,6 +78,19 @@ export function Liquidity() {
     initialLockRaw === "timed" || initialLockRaw === "forever" ? initialLockRaw : "free";
 
   const [handle, setHandle] = useState(initialHandle);
+
+  // Mirror `?h=` and `?lock=` URL changes back into state. Without this
+  // the page sticks to mount-time params and ignores in-app deep links.
+  useEffect(() => {
+    const nextHandle = searchParams.get("h")?.toLowerCase().trim();
+    if (nextHandle && nextHandle !== handle) setHandle(nextHandle);
+    const nextLockRaw = searchParams.get("lock");
+    const nextLock: "free" | "timed" | "forever" =
+      nextLockRaw === "timed" || nextLockRaw === "forever" ? nextLockRaw : "free";
+    setLockKind((cur) => (cur === nextLock ? cur : nextLock));
+    // Intentionally only react to URL changes, not local edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [resolvedHandle, setResolvedHandle] = useState<string | null>(null);
   const [tokenMeta, setTokenMeta] = useState<string | null>(null);
   const [poolReserves, setPoolReserves] = useState<{ apt: bigint; token: bigint } | null>(null);
@@ -139,11 +157,17 @@ export function Liquidity() {
     let cancelled = false;
     const known = readKnownPositions(resolvedHandle, address);
     Promise.all(
+      // Per-row try/catch — one stale localStorage addr that no longer
+      // resolves on chain shouldn't drop the whole position list.
       known.map(async (addr) => {
-        const meta = await loadPosition(rpc, addr);
-        if (!meta) return null;
-        const pending = await pendingAll(rpc, addr);
-        return { meta, pending };
+        try {
+          const meta = await loadPosition(rpc, addr);
+          if (!meta) return null;
+          const pending = await pendingAll(rpc, addr).catch<[bigint, bigint, bigint]>(() => [0n, 0n, 0n]);
+          return { meta, pending };
+        } catch {
+          return null;
+        }
       }),
     ).then((out) => {
       if (cancelled) return;

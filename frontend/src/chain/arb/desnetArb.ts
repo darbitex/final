@@ -179,18 +179,48 @@ export async function discoverDarbitexPoolForToken(
   tokenMetaAddr: string,
   pkgAddr: string,
 ): Promise<string | null> {
-  try {
+  // Try the rpc-pool path first (cached + multi-endpoint failover). On any
+  // failure (rare, but seen with throttled endpoints) fall back to a direct
+  // public-mainnet REST view — same workaround used elsewhere in the
+  // codebase. The view fn is symmetric in args so order doesn't matter.
+  const tryPool = async () => {
     const [addr] = await rpc.viewFn<[string]>(
       "pool_factory::canonical_pool_address_of",
       [],
       [APT_FA_ADDR, tokenMetaAddr],
       pkgAddr,
     );
-    const s = String(addr ?? "");
-    return /^0x0+$/.test(s) ? null : s;
+    return String(addr ?? "");
+  };
+  const tryRest = async () => {
+    const r = await fetch("https://fullnode.mainnet.aptoslabs.com/v1/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        function: `${pkgAddr}::pool_factory::canonical_pool_address_of`,
+        type_arguments: [],
+        arguments: [APT_FA_ADDR, tokenMetaAddr],
+      }),
+    });
+    if (!r.ok) return "";
+    const arr = (await r.json()) as string[];
+    return String(arr?.[0] ?? "");
+  };
+
+  let s = "";
+  try {
+    s = await tryPool();
   } catch {
-    return null;
+    s = "";
   }
+  if (!s || /^0x0+$/.test(s)) {
+    try {
+      s = await tryRest();
+    } catch {
+      s = "";
+    }
+  }
+  return !s || /^0x0+$/.test(s) ? null : s;
 }
 
 /**

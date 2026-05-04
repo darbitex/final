@@ -12,7 +12,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { createRpcPool } from "../../chain/rpc-pool";
 import { MintActionBar } from "../../components/MintActionBar";
 import { useAddress } from "../../wallet/useConnect";
-import { deriveProfileAddress, handleOfWallet, handleToWallet } from "../../chain/desnet/profile";
+import { deriveProfileAddress, handleOfWallet, handleToWallet, validateHandle } from "../../chain/desnet/profile";
 import {
   VERB,
   decodeMintPayload,
@@ -27,8 +27,11 @@ const rpc = createRpcPool("desnet-mint-permalink");
 
 // Walk-back size — enough to find any mint on a small handle today. For
 // PIDs with thousands of mints this would need a smarter (random-access)
-// chunk-walker keyed on seq → chunk; future indexer-satellite work.
-const SEARCH_LIMIT = 500;
+// chunk-walker keyed on seq → chunk; future indexer-satellite work. We
+// distinguish "definitely doesn't exist" (entire history walked, none
+// matched) from "out of search budget" (hit the limit, mint may exist
+// further back) so the user gets accurate copy.
+const SEARCH_LIMIT = 1000;
 
 type Resolved = {
   handle: string;
@@ -46,6 +49,7 @@ export function Mint() {
   const [entry, setEntry] = useState<HistoryEntry | null>(null);
   const [decoded, setDecoded] = useState<DecodedMint | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [outOfBudget, setOutOfBudget] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasOpinion, setHasOpinion] = useState<boolean | null>(null);
   const [myPid, setMyPid] = useState<string | null>(null);
@@ -55,6 +59,11 @@ export function Mint() {
     const n = Number(seqParam ?? NaN);
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
   }, [seqParam]);
+
+  // Reject malformed handle URLs before any chain lookup. Mirrors the
+  // gate ProfileShell.tsx applies — defense in depth against a
+  // permalink shared with a tampered :handle segment.
+  const handleErr = useMemo(() => (handle ? validateHandle(handle) : "missing"), [handle]);
 
   // Resolve handle → wallet → pid
   useEffect(() => {
@@ -103,6 +112,7 @@ export function Mint() {
     setEntry(null);
     setDecoded(null);
     setNotFound(false);
+    setOutOfBudget(false);
     if (!author || seq === null) return;
     setLoading(true);
     (async () => {
@@ -118,7 +128,13 @@ export function Mint() {
             return;
           }
         }
-        if (!cancelled) setNotFound(true);
+        if (cancelled) return;
+        // If we hit SEARCH_LIMIT we may not have walked far enough back —
+        // the mint could exist beyond the budget. Distinguish from the
+        // definite-not-found case (fewer rows than budget = full history
+        // walked, nothing matched).
+        if (rows.length >= SEARCH_LIMIT) setOutOfBudget(true);
+        else setNotFound(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -149,6 +165,17 @@ export function Mint() {
       </div>
     );
   }
+  if (handleErr) {
+    return (
+      <div className="card">
+        <h2>Invalid handle</h2>
+        <p className="muted">
+          <code>@{handle}</code> isn't a valid DeSNet handle ({handleErr}). Handles
+          are lowercase a-z, digits, underscore, 1-64 bytes, must start with a letter.
+        </p>
+      </div>
+    );
+  }
   if (authorMissing) {
     return (
       <div className="card">
@@ -160,6 +187,19 @@ export function Mint() {
     );
   }
   if (!author || loading) return <div className="page-loading">Loading mint…</div>;
+  if (outOfBudget) {
+    return (
+      <div className="card">
+        <h2>Mint #{seq} is older than the search budget</h2>
+        <p className="muted">
+          @{author.handle}'s history exceeds the {SEARCH_LIMIT}-entry walk-back limit
+          and seq #{seq} sits past the cutoff. The mint likely exists on chain — a
+          full lookup needs an indexer satellite (planned for v0.5+). For now,{" "}
+          <Link to={`/desnet/p/${author.handle}/post`}>browse @{author.handle}'s feed →</Link>
+        </p>
+      </div>
+    );
+  }
   if (notFound || !entry || !decoded) {
     return (
       <div className="card">

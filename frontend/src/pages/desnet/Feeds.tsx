@@ -156,15 +156,25 @@ export function Feeds() {
         if (cancelled) return;
         setRows(out);
 
-        // Resolve market_exists for each (parallel, fire-and-forget update)
-        out.forEach(async (row, idx) => {
+        // Resolve market_exists for each (parallel, fire-and-forget update).
+        // We compare-by-id (author + seq) rather than index when applying the
+        // delta — if the user toggles mode while these are inflight, our
+        // captured `out` row references go stale and rewriting copy[idx]
+        // would scramble unrelated rows in the new mode's array.
+        out.forEach(async (row) => {
           try {
             const ok = await marketExists(rpc, row.decoded.author, row.decoded.seq);
             if (cancelled) return;
+            const targetAuthor = row.decoded.author;
+            const targetSeq = row.decoded.seq;
             setRows((cur) => {
               if (!cur) return cur;
+              const i = cur.findIndex(
+                (r) => r.decoded.author === targetAuthor && r.decoded.seq === targetSeq,
+              );
+              if (i < 0) return cur;
               const copy = cur.slice();
-              if (copy[idx]) copy[idx] = { ...copy[idx], hasOpinion: ok };
+              copy[i] = { ...copy[i], hasOpinion: ok };
               return copy;
             });
           } catch { /* ignore */ }

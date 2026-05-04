@@ -70,11 +70,15 @@ export function Profile() {
         return;
       }
       const pidAddr = await deriveProfileAddress(rpc, wallet);
+      // All five reads catch independently — a transient endpoint hiccup on
+      // any single one shouldn't blank the whole profile page. Bare reject
+      // on loadProfileResource was the original poison-pill: it would land
+      // on the outer catch, leave snap null, and render whitespace.
       const [profile, mc, sc, sbc, tokenMeta] = await Promise.all([
-        loadProfileResource(rpc, pidAddr),
+        loadProfileResource(rpc, pidAddr).catch(() => null),
         mintCount(rpc, pidAddr).catch(() => 0),
-        syncCount(rpc, pidAddr),
-        syncedByCount(rpc, pidAddr),
+        syncCount(rpc, pidAddr).catch(() => 0),
+        syncedByCount(rpc, pidAddr).catch(() => 0),
         tokenMetadataAddr(rpc, handle).catch(() => null),
       ]);
       let pool: Snapshot["pool"] = null;
@@ -191,8 +195,12 @@ export function Profile() {
           ) : tokenView.icon ? (
             // No on-chain avatar — fall back to the profile's $TOKEN icon. Looks
             // nicer than a letter badge and keeps brand identity coherent (the
-            // same icon shows up in Swap/Liquidity/feed-row cards).
-            <div className="avatar" style={{ padding: 0, overflow: "hidden", background: "transparent" }}>
+            // same icon shows up in Swap/Liquidity/feed-row cards). If the
+            // token icon ALSO fails to load, TokenIcon's internal letter-badge
+            // fallback renders inside this wrapper — keep the wrapper sized
+            // and bordered like a normal avatar so the letter badge sits on
+            // a styled square rather than a transparent void.
+            <div className="avatar" style={{ padding: 0, overflow: "hidden" }}>
               <TokenIcon token={tokenView} size={80} className="avatar-token-icon" />
             </div>
           ) : (

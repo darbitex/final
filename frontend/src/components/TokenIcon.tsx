@@ -53,6 +53,11 @@ export function TokenIcon({
       width={size}
       height={size}
       loading="lazy"
+      // Issuer-supplied icon_uri can be any URL — strip referrer + opt out
+      // of credentials so an attacker-issued token can't fingerprint
+      // viewers via the IP/UA pixel-tracking surface.
+      referrerPolicy="no-referrer"
+      crossOrigin="anonymous"
       onError={() => setFailed(true)}
     />
   );

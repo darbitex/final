@@ -3,9 +3,62 @@ import { fetchFaBalance } from "../../chain/balance";
 import { tokenReserves } from "../../chain/desnet/amm";
 import { createRpcPool, fromRaw } from "../../chain/rpc-pool";
 import { useAptPriceUsd, formatUsd } from "../../chain/prices";
-import { DESNET_PACKAGE, DESNET_PID_NFT } from "../../config";
+import { vaultBalance as opinionVaultBalance, marketExists } from "../../chain/desnet/opinion";
+import { loadRecentHistory, decodeMintPayload, VERB } from "../../chain/desnet/history";
+import { handleToWallet, deriveProfileAddress } from "../../chain/desnet/profile";
 
 const rpc = createRpcPool("desnet-pool-stats");
+
+// FA::supply view via the rpc pool — keeps multi-endpoint failover + auth
+// header. Returns 0n on missing/error rather than throwing so the panel
+// can render the rest of the breakdown even if supply is briefly stale.
+async function readFaSupply(metadata: string): Promise<bigint> {
+  try {
+    const r = await rpc.viewFn<[{ vec: [string] | [] }]>(
+      "0x1::fungible_asset::supply",
+      ["0x1::fungible_asset::Metadata"],
+      [metadata],
+    );
+    const v = r?.[0]?.vec?.[0];
+    return v ? BigInt(v) : 0n;
+  } catch {
+    return 0n;
+  }
+}
+
+// Walk the handle's recent history, find every opinion-mint, sum its vault
+// balance. Bound at MINT_SCAN_DEPTH to keep the round-trip count flat —
+// proper enumeration belongs to the indexer satellite (deferred). For
+// PIDs with more than MINT_SCAN_DEPTH mints, this undercounts older
+// markets; flagged in the panel as "(scanned recent N)".
+const MINT_SCAN_DEPTH = 200;
+async function sumOpinionVaults(handle: string): Promise<bigint> {
+  try {
+    const wallet = await handleToWallet(rpc, handle);
+    if (!wallet) return 0n;
+    const pidAddr = await deriveProfileAddress(rpc, wallet);
+    const rows = await loadRecentHistory(rpc, pidAddr, MINT_SCAN_DEPTH);
+    const seqs: number[] = [];
+    for (const e of rows) {
+      if (e.verb !== VERB.MINT && e.verb !== VERB.VOICE && e.verb !== VERB.REMIX) continue;
+      const d = decodeMintPayload(e.payloadHex);
+      if (d) seqs.push(d.seq);
+    }
+    if (seqs.length === 0) return 0n;
+    // marketExists is cheap; query in parallel. For matches, fetch vault.
+    const flags = await Promise.all(
+      seqs.map((s) => marketExists(rpc, pidAddr, s).catch(() => false)),
+    );
+    const matchSeqs = seqs.filter((_, i) => flags[i]);
+    if (matchSeqs.length === 0) return 0n;
+    const balances = await Promise.all(
+      matchSeqs.map((s) => opinionVaultBalance(rpc, pidAddr, s).catch(() => 0n)),
+    );
+    return balances.reduce((a, b) => a + b, 0n);
+  } catch {
+    return 0n;
+  }
+}
 
 type SupplyInfo = {
   circulating: bigint;
@@ -40,39 +93,20 @@ export function PoolStatsPanel({ handle, tokenMeta, tokenSymbol, poolReserves }:
     let cancelled = false;
     (async () => {
       try {
-        const recs = await tokenReserves(rpc, handle);
+        // Per-fetch error isolation — one failing read can't poison the
+        // whole panel. Each settles independently to a sensible 0n
+        // fallback. The panel still renders; the failed row shows 0.
+        const recs = await tokenReserves(rpc, handle).catch(() => null);
+        if (cancelled) return;
+        const lpReserveAddr = recs?.lp_reserve ?? null;
+        const reactionReserveAddr = recs?.reaction_reserve ?? null;
         const [lpBal, rxBal, opVaultBal, currentSupplyRaw] = await Promise.all([
-          fetchFaBalance(recs.lp_reserve, tokenMeta),
-          fetchFaBalance(recs.reaction_reserve, tokenMeta),
-          handle === "desnet"
-            ? fetch("https://fullnode.mainnet.aptoslabs.com/v1/view", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  function: `${DESNET_PACKAGE}::opinion::vault_balance`,
-                  type_arguments: [],
-                  arguments: [DESNET_PID_NFT, "1"],
-                }),
-              })
-                .then((r) => r.json())
-                .then((arr: string[]) => BigInt(arr?.[0] ?? "0"))
-                .catch(() => 0n)
-            : Promise.resolve(0n),
-          fetch("https://fullnode.mainnet.aptoslabs.com/v1/view", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              function: "0x1::fungible_asset::supply",
-              type_arguments: ["0x1::fungible_asset::Metadata"],
-              arguments: [tokenMeta],
-            }),
-          })
-            .then((r) => r.json())
-            .then((arr: Array<{ vec: string[] } | null>) => {
-              const v = arr?.[0]?.vec?.[0];
-              return v ? BigInt(v) : 0n;
-            })
-            .catch(() => 0n),
+          lpReserveAddr ? fetchFaBalance(lpReserveAddr, tokenMeta).catch(() => 0n) : Promise.resolve(0n),
+          reactionReserveAddr ? fetchFaBalance(reactionReserveAddr, tokenMeta).catch(() => 0n) : Promise.resolve(0n),
+          // Generic per-handle opinion-vault sum. Bound at MINT_SCAN_DEPTH
+          // recent entries — see sumOpinionVaults docstring.
+          sumOpinionVaults(handle),
+          readFaSupply(tokenMeta),
         ]);
         if (cancelled) return;
         const TOTAL = 100_000_000_000_000_000n; // 1B × 10^8
