@@ -173,10 +173,10 @@ export function OpinionList() {
       <div className="card">
         <h3>Opinion markets</h3>
         <p className="muted small">
-          Belief markets attached to mints. Each mint can carry an always-open
+          Opinion markets attached to mints. Each mint can carry an always-open
           YAY/NAY market denominated in the author's <code>$creator_token</code>.
-          List here is from curated handles ({CURATED_HANDLES.join(", ")}); for
-          arbitrary markets, use quick-jump or the in-feed{" "}
+          Listed here is only from protocol <code>desnet</code>; for arbitrary
+          markets, use quick-jump or the in-feed{" "}
           <Link to="/desnet/social/feeds">aggregated timeline</Link> badge.
         </p>
 

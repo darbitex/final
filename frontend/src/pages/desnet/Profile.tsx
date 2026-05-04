@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAddress } from "../../wallet/useConnect";
-import { createRpcPool, fromRaw } from "../../chain/rpc-pool";
+import { createRpcPool } from "../../chain/rpc-pool";
 import { DESNET_PACKAGE } from "../../config";
 import {
   handleToWallet,
@@ -15,6 +15,8 @@ import { isSynced, syncCount, syncedByCount, syncArgs, unsyncArgs, SYNC_FN, UNSY
 import { reserves, lpSupply, tokenMetadataAddr } from "../../chain/desnet/amm";
 import { useTokenView } from "../../chain/desnet/tokenIcon";
 import { TokenIcon } from "../../components/TokenIcon";
+import { ShareIcon } from "../../components/VerbIcons";
+import { PoolStatsPanel } from "../../components/desnet/PoolStatsPanel";
 import {
   aptosAddrEq,
   guessMimeFromB64,
@@ -23,9 +25,6 @@ import {
 } from "../../chain/desnet/format";
 
 const rpc = createRpcPool("desnet-profile");
-
-const APT_DECIMALS = 8;
-const TOKEN_DECIMALS = 8;
 
 type Snapshot = {
   pidAddr: string;
@@ -178,13 +177,6 @@ export function Profile() {
 
   const isMe = !!myAddr && aptosAddrEq(myAddr, snap.wallet);
 
-  // Spot price = APT reserve / token reserve (in display units)
-  const spotPrice =
-    snap.pool && snap.pool.tokenReserve > 0n
-      ? fromRaw(snap.pool.aptReserve, APT_DECIMALS) /
-        fromRaw(snap.pool.tokenReserve, TOKEN_DECIMALS)
-      : null;
-
   return (
     <>
       <div className="card profile-card">
@@ -196,15 +188,28 @@ export function Profile() {
               className="avatar"
               onError={() => setAvatarFailed(true)}
             />
+          ) : tokenView.icon ? (
+            // No on-chain avatar — fall back to the profile's $TOKEN icon. Looks
+            // nicer than a letter badge and keeps brand identity coherent (the
+            // same icon shows up in Swap/Liquidity/feed-row cards).
+            <div className="avatar" style={{ padding: 0, overflow: "hidden", background: "transparent" }}>
+              <TokenIcon token={tokenView} size={80} className="avatar-token-icon" />
+            </div>
           ) : (
             <div className="avatar avatar-fallback">{snap.profile.handle[0]?.toUpperCase()}</div>
           )}
           <div className="profile-meta">
-            <h2>@{snap.profile.handle}</h2>
-            <div className="muted small">
-              wallet <code>{shortAddr(snap.wallet)}</code> · pid{" "}
-              <code>{shortAddr(snap.pidAddr)}</code>
-            </div>
+            <h2>
+              <a
+                href={`https://explorer.aptoslabs.com/object/${snap.pidAddr}?network=mainnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`PID Object on chain: ${snap.pidAddr}`}
+                style={{ color: "inherit", textDecoration: "none", borderBottom: "1px dotted #444" }}
+              >
+                @{snap.profile.handle}
+              </a>
+            </h2>
             {snap.profile.bio && <p className="bio">{snap.profile.bio}</p>}
           </div>
         </div>
@@ -226,6 +231,34 @@ export function Profile() {
             </button>
           )}
           <button
+            className="link verb-btn"
+            onClick={async () => {
+              const path = `/desnet/p/${snap.profile.handle}`;
+              const fullUrl = typeof window !== "undefined" ? window.location.origin + path : path;
+              if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+                try {
+                  await navigator.share({
+                    title: `@${snap.profile.handle} on DeSNet`,
+                    text: snap.profile.bio || `@${snap.profile.handle}`,
+                    url: fullUrl,
+                  });
+                  return;
+                } catch {
+                  // user cancelled or unsupported — fall through to twitter intent
+                }
+              }
+              const tweet =
+                `https://twitter.com/intent/tweet?text=${encodeURIComponent(`@${snap.profile.handle} on DeSNet`)}` +
+                `&url=${encodeURIComponent(fullUrl)}`;
+              if (typeof window !== "undefined") window.open(tweet, "_blank", "noopener,noreferrer");
+            }}
+            title="Share this profile"
+            aria-label="share profile"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            <ShareIcon />
+          </button>
+          <button
             className="link small"
             onClick={() => setRefreshTick((t) => t + 1)}
             title="Re-read profile from chain (use after PID transfer or to pull latest stats)"
@@ -244,18 +277,12 @@ export function Profile() {
         </h3>
         {snap.pool ? (
           <>
-            <div className="card-stat">
-              <div>Spot price (APT per ${snap.profile.handle.toUpperCase()})</div>
-              <div>{spotPrice != null ? spotPrice.toExponential(4) : "—"}</div>
-            </div>
-            <div className="card-stat">
-              <div>APT reserve</div>
-              <div>{fromRaw(snap.pool.aptReserve, APT_DECIMALS).toLocaleString()}</div>
-            </div>
-            <div className="card-stat">
-              <div>${snap.profile.handle.toUpperCase()} reserve</div>
-              <div>{fromRaw(snap.pool.tokenReserve, TOKEN_DECIMALS).toLocaleString()}</div>
-            </div>
+            <PoolStatsPanel
+              handle={snap.profile.handle}
+              tokenMeta={snap.tokenMeta}
+              tokenSymbol={snap.profile.handle.toUpperCase()}
+              poolReserves={{ apt: snap.pool.aptReserve, token: snap.pool.tokenReserve }}
+            />
             <div className="card-stat">
               <div>LP supply</div>
               <div>{snap.pool.lpSupply.toString()}</div>
@@ -276,8 +303,10 @@ export function Profile() {
             )}
             <p className="muted small">
               Trade on the{" "}
-              <a href={`/desnet/swap?h=${snap.profile.handle}`}>Swap tab</a> · Add LP
-              on the <a href={`/desnet/liquidity?h=${snap.profile.handle}`}>Liquidity tab</a>.
+              <Link to={`/desnet/swap?h=${snap.profile.handle}`}>Swap tab</Link> · Add LP
+              on the <Link to={`/desnet/liquidity?h=${snap.profile.handle}`}>Liquidity tab</Link>{" "}
+              · <Link to={`/desnet/liquidity?h=${snap.profile.handle}&lock=forever`}>Stake</Link>{" "}
+              to gain Voting power.
             </p>
           </>
         ) : (

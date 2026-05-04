@@ -55,7 +55,7 @@ import {
   type UploadProgress,
 } from "../../chain/desnet/assetsOrchestrator";
 import { OpinionInlineActions } from "../../components/OpinionInlineActions";
-import { EchoIcon, OpinionIcon, PressIcon, RemixIcon, SparkIcon, VoiceIcon } from "../../components/VerbIcons";
+import { EchoIcon, OpinionIcon, PressIcon, RemixIcon, ShareIcon, SparkIcon, VoiceIcon } from "../../components/VerbIcons";
 
 // Cross-component prefill payload — when user clicks Voice/Remix on a feed
 // row, Feed lifts this into its scope and Compose reads it on next render to
@@ -207,7 +207,34 @@ export function Feed() {
         </p>
       )}
 
-      <h3>Feed</h3>
+      <h3 style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span>Feed</span>
+        <button
+          type="button"
+          className="link verb-btn"
+          onClick={async () => {
+            const path = `/desnet/p/${author.handle}/post`;
+            const fullUrl = typeof window !== "undefined" ? window.location.origin + path : path;
+            if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+              try {
+                await navigator.share({ title: `@${author.handle} on DeSNet`, url: fullUrl });
+                return;
+              } catch {
+                // user cancelled — fall through to twitter intent
+              }
+            }
+            const tweet =
+              `https://twitter.com/intent/tweet?text=${encodeURIComponent(`@${author.handle} on DeSNet`)}` +
+              `&url=${encodeURIComponent(fullUrl)}`;
+            if (typeof window !== "undefined") window.open(tweet, "_blank", "noopener,noreferrer");
+          }}
+          title="Share this feed"
+          aria-label="share feed"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 14 }}
+        >
+          <ShareIcon />
+        </button>
+      </h3>
       {loadingFeed ? (
         <p className="muted">Loading entries…</p>
       ) : feed.length === 0 ? (
@@ -1256,8 +1283,11 @@ function FeedRow({
           </Link>
         )}{" "}
         <span className="muted small">
-          @{authorHandle} · #{decoded.seq} ·{" "}
-          {new Date(entry.timestampSecs * 1000).toLocaleString()}
+          @{authorHandle} ·{" "}
+          <Link to={`/desnet/p/${authorHandle}/m/${decoded.seq}`} className="permalink">#{decoded.seq}</Link> ·{" "}
+          <Link to={`/desnet/p/${authorHandle}/m/${decoded.seq}`} className="permalink">
+            {new Date(entry.timestampSecs * 1000).toLocaleString()}
+          </Link>
         </span>
       </div>
       <div className="feed-text">{decoded.contentText}</div>

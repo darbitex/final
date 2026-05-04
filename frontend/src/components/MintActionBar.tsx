@@ -12,7 +12,7 @@ import { marketExists } from "../chain/desnet/opinion";
 import { aptosAddrEq } from "../chain/desnet/format";
 import { createRpcPool } from "../chain/rpc-pool";
 import { OpinionInlineActions } from "./OpinionInlineActions";
-import { EchoIcon, OpinionIcon, PressIcon, RemixIcon, SparkIcon, VoiceIcon } from "./VerbIcons";
+import { EchoIcon, OpinionIcon, PressIcon, RemixIcon, ShareIcon, SparkIcon, VoiceIcon } from "./VerbIcons";
 import type { MoveArg, MoveFn } from "../chain/desnet/tx";
 
 const rpc = createRpcPool("mint-action-bar");
@@ -230,6 +230,30 @@ export function MintActionBar({
             <OpinionIcon />
           </button>
         )}
+
+        <button
+          className="link verb-btn"
+          onClick={async () => {
+            const permalink = `/desnet/p/${authorHandle}/m/${seq}`;
+            const fullUrl =
+              typeof window !== "undefined" ? window.location.origin + permalink : permalink;
+            if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+              try {
+                await navigator.share({ title: `@${authorHandle} on DeSNet`, url: fullUrl });
+                return;
+              } catch {
+                // user cancelled or share failed — fall through to twitter intent
+              }
+            }
+            const tweet = `https://twitter.com/intent/tweet?url=${encodeURIComponent(fullUrl)}`;
+            if (typeof window !== "undefined") window.open(tweet, "_blank", "noopener,noreferrer");
+          }}
+          title="Share permalink"
+          aria-label="share"
+          style={iconBtnStyle}
+        >
+          <ShareIcon />
+        </button>
       </div>
 
       {actionError && <p className="error small" style={{ marginTop: 6 }}>{actionError}</p>}

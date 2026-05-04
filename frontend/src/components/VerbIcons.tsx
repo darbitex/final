@@ -111,3 +111,26 @@ export function OpinionIcon({ size = 16, className }: Props) {
     </svg>
   );
 }
+
+export function ShareIcon({ size = 16, className }: Props) {
+  // Three nodes connected by lines — classic "share" glyph.
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="6" r="2.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="M8.2 10.8 L15.8 7.2 M8.2 13.2 L15.8 16.8" />
+    </svg>
+  );
+}

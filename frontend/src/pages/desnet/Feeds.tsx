@@ -297,8 +297,11 @@ function FeedAggregatedRow({
       <div className="feed-meta">
         <span className="verb-badge">{verbName}</span>{" "}
         <span className="muted small">
-          <Link to={`/desnet/p/${authorHandle}/post`}>@{authorHandle}</Link> · #{decoded.seq} ·{" "}
-          {new Date(row.entry.timestampSecs * 1000).toLocaleString()}
+          <Link to={`/desnet/p/${authorHandle}/post`}>@{authorHandle}</Link> ·{" "}
+          <Link to={`/desnet/p/${authorHandle}/m/${decoded.seq}`} className="permalink">#{decoded.seq}</Link> ·{" "}
+          <Link to={`/desnet/p/${authorHandle}/m/${decoded.seq}`} className="permalink">
+            {new Date(row.entry.timestampSecs * 1000).toLocaleString()}
+          </Link>
           {isMyMint && " · (you)"}
         </span>
       </div>

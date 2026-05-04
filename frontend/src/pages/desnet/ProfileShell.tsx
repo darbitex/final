@@ -26,7 +26,6 @@ export function ProfileShell() {
   }
   return (
     <div className="container">
-      <h1 className="page-title">@{safe}</h1>
       <div className="subnav">
         <NavLink end to={`/desnet/p/${safe}`}>Profile</NavLink>
         <NavLink to={`/desnet/p/${safe}/post`}>Post</NavLink>

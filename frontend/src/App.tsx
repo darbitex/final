@@ -59,6 +59,9 @@ const DesnetProfile = lazy(() =>
 const DesnetFeed = lazy(() =>
   import("./pages/desnet/Feed").then((m) => ({ default: m.Feed })),
 );
+const DesnetMint = lazy(() =>
+  import("./pages/desnet/Mint").then((m) => ({ default: m.Mint })),
+);
 const DesnetAbout = lazy(() =>
   import("./pages/desnet/About").then((m) => ({ default: m.About })),
 );
@@ -150,6 +153,7 @@ export function App() {
             <Route path="desnet/p/:handle" element={wrap(<DesnetProfileShell />)}>
               <Route index element={wrap(<DesnetProfile />)} />
               <Route path="post" element={wrap(<DesnetFeed />)} />
+              <Route path="m/:seq" element={wrap(<DesnetMint />)} />
               <Route path="about" element={wrap(<DesnetAbout />)} />
             </Route>
 

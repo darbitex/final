@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAddress } from "../../wallet/useConnect";
 import { useFaBalance } from "../../chain/balance";
@@ -34,13 +35,21 @@ export function Swap() {
   const { signAndSubmitTransaction, connected } = useWallet();
   const aptPrice = useAptPriceUsd();
   const [slippage] = useSlippage();
+  const [searchParams] = useSearchParams();
 
-  const [handle, setHandle] = useState("desnet");
-  const [resolvedHandle, setResolvedHandle] = useState<string | null>("desnet");
+  // `?h=<handle>` deep-link support (driven by Profile and elsewhere).
+  const initialHandle = searchParams.get("h")?.toLowerCase().trim() || "desnet";
+
+  const [handle, setHandle] = useState(initialHandle);
+  const [resolvedHandle, setResolvedHandle] = useState<string | null>(initialHandle);
   // Pre-seed with DESNET_FA so the token icon resolves on first paint
-  // without waiting on the debounced view round-trip.
-  const [tokenMeta, setTokenMeta] = useState<string | null>(DESNET_FA);
-  const [tokenSymbol, setTokenSymbol] = useState<string>("DESNET");
+  // without waiting on the debounced view round-trip. Only when starting
+  // on the desnet handle — for other handles tokenMeta resolves once the
+  // view fn lands (icon shows letter fallback briefly until then).
+  const [tokenMeta, setTokenMeta] = useState<string | null>(
+    initialHandle === "desnet" ? DESNET_FA : null,
+  );
+  const [tokenSymbol, setTokenSymbol] = useState<string>(initialHandle.toUpperCase());
   const [poolReserves, setPoolReserves] = useState<{ apt: bigint; token: bigint } | null>(null);
 
   const [aptToToken, setAptToToken] = useState(true);

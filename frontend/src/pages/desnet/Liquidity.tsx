@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAddress } from "../../wallet/useConnect";
 import { useFaBalance } from "../../chain/balance";
@@ -62,8 +63,16 @@ function rememberPosition(handle: string, owner: string, addr: string): void {
 export function Liquidity() {
   const address = useAddress();
   const { signAndSubmitTransaction } = useWallet();
+  const [searchParams] = useSearchParams();
 
-  const [handle, setHandle] = useState("desnet");
+  // Pre-fill handle (`?h=`) and lock kind (`?lock=free|timed|forever`) from
+  // the URL — drives deep-links from Profile and other pages.
+  const initialHandle = searchParams.get("h")?.toLowerCase().trim() || "desnet";
+  const initialLockRaw = searchParams.get("lock");
+  const initialLock: "free" | "timed" | "forever" =
+    initialLockRaw === "timed" || initialLockRaw === "forever" ? initialLockRaw : "free";
+
+  const [handle, setHandle] = useState(initialHandle);
   const [resolvedHandle, setResolvedHandle] = useState<string | null>(null);
   const [tokenMeta, setTokenMeta] = useState<string | null>(null);
   const [poolReserves, setPoolReserves] = useState<{ apt: bigint; token: bigint } | null>(null);
@@ -71,7 +80,7 @@ export function Liquidity() {
 
   const [aptIn, setAptIn] = useState("");
   const [tokenIn, setTokenIn] = useState("");
-  const [lockKind, setLockKind] = useState<"free" | "timed" | "forever">("free");
+  const [lockKind, setLockKind] = useState<"free" | "timed" | "forever">(initialLock);
   const [lockDays, setLockDays] = useState("30");
 
   const [submitting, setSubmitting] = useState(false);
@@ -466,7 +475,15 @@ export function Liquidity() {
       ) : null}
 
       <button className="primary" disabled={!canAdd} onClick={addLiquidity}>
-        {submitting ? "Adding…" : "Add liquidity"}
+        {submitting
+          ? lockKind === "forever"
+            ? "Staking…"
+            : "Adding…"
+          : lockKind === "forever"
+            ? "Stake (forever-lock + voting power)"
+            : lockKind === "timed"
+              ? `Add & lock for ${lockDays} days`
+              : "Add liquidity"}
       </button>
 
       <h3>Your positions</h3>
