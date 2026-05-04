@@ -12,6 +12,7 @@ import {
 import {
   handleBytes,
   isHandleRegistered,
+  useRegisteredHandles,
   validateHandle,
 } from "../../chain/desnet/profile";
 import {
@@ -22,6 +23,7 @@ import {
 } from "../../chain/desnet/staking";
 import { APT_VIEW, useTokenView } from "../../chain/desnet/tokenIcon";
 import { TokenIcon } from "../../components/TokenIcon";
+import { PoolStatsPanel } from "../../components/desnet/PoolStatsPanel";
 import { normalizeAptosAddr } from "../../chain/desnet/format";
 
 const APT = TOKENS.APT;
@@ -84,6 +86,7 @@ export function Liquidity() {
   const aptBal = useFaBalance(APT.meta, APT.decimals);
   const tokenBal = useFaBalance(tokenMeta, 8);
   const tokenView = useTokenView(tokenMeta);
+  const registeredHandles = useRegisteredHandles();
 
   const handleErr = useMemo(() => (handle ? validateHandle(handle) : null), [handle]);
 
@@ -342,62 +345,77 @@ export function Liquidity() {
       <label className="field">
         <span>Handle</span>
         <input
+          list="desnet-registered-handles"
           value={handle}
           onChange={(e) => setHandle(e.target.value.toLowerCase().trim())}
           placeholder="desnet"
         />
+        <datalist id="desnet-registered-handles">
+          {registeredHandles.map((h) => (
+            <option key={h} value={h} />
+          ))}
+        </datalist>
         {handleErr && <small className="error">{handleErr}</small>}
+        {registeredHandles.length > 0 && (
+          <small className="muted">
+            {registeredHandles.length} handle{registeredHandles.length === 1 ? "" : "s"} registered. Click the field for suggestions.
+          </small>
+        )}
       </label>
 
-      <div className="card-stat">
-        <div>Pool reserves</div>
-        <div>
-          {poolReserves ? (
-            <>
-              <strong>{fromRaw(poolReserves.apt, 8).toLocaleString()}</strong> APT ·{" "}
-              <strong>{fromRaw(poolReserves.token, 8).toLocaleString()}</strong> $
-              {resolvedHandle?.toUpperCase() ?? "?"}
-            </>
-          ) : (
-            "—"
-          )}
-        </div>
-      </div>
+      <PoolStatsPanel
+        handle={resolvedHandle}
+        tokenMeta={tokenMeta}
+        tokenSymbol={resolvedHandle?.toUpperCase() ?? "TOKEN"}
+        poolReserves={poolReserves}
+      />
 
       <h3>Add liquidity</h3>
-      <div className="grid-2">
-        <label className="field">
-          <span>
-            <TokenIcon token={APT_VIEW} size={14} /> APT
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={aptIn}
-            onChange={(e) => onAptIn(e.target.value)}
-            placeholder="0.0"
-            min="0"
-            step="any"
-          />
-          <small>balance: {aptBal.formatted.toLocaleString()}</small>
-        </label>
-        <label className="field">
-          <span>
-            <TokenIcon token={tokenView} size={14} /> $
-            {resolvedHandle?.toUpperCase() ?? "TOKEN"}
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={tokenIn}
-            onChange={(e) => onTokenIn(e.target.value)}
-            placeholder="0.0"
-            min="0"
-            step="any"
-          />
-          <small>balance: {tokenBal.formatted.toLocaleString()}</small>
-        </label>
-      </div>
+      <label className="field">
+        <span>
+          <TokenIcon token={APT_VIEW} size={14} /> APT
+        </span>
+        <input
+          type="number"
+          inputMode="decimal"
+          value={aptIn}
+          onChange={(e) => onAptIn(e.target.value)}
+          placeholder="0.0"
+          min="0"
+          step="any"
+        />
+        <button
+          type="button"
+          className="bal-link"
+          onClick={() => aptBal.raw > 0n && onAptIn(aptBal.formatted.toString())}
+          disabled={aptBal.raw === 0n}
+        >
+          balance: {aptBal.formatted.toLocaleString()} (click for max)
+        </button>
+      </label>
+      <label className="field">
+        <span>
+          <TokenIcon token={tokenView} size={14} /> $
+          {resolvedHandle?.toUpperCase() ?? "TOKEN"}
+        </span>
+        <input
+          type="number"
+          inputMode="decimal"
+          value={tokenIn}
+          onChange={(e) => onTokenIn(e.target.value)}
+          placeholder="0.0"
+          min="0"
+          step="any"
+        />
+        <button
+          type="button"
+          className="bal-link"
+          onClick={() => tokenBal.raw > 0n && onTokenIn(tokenBal.formatted.toString())}
+          disabled={tokenBal.raw === 0n}
+        >
+          balance: {tokenBal.formatted.toLocaleString()} (click for max)
+        </button>
+      </label>
 
       <fieldset className="lock-pick">
         <legend>Position type</legend>

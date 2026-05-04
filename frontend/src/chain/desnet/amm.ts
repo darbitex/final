@@ -56,6 +56,28 @@ export async function creatorPid(rpc: RpcPool, handle: string): Promise<string> 
   return String(r[0]);
 }
 
+// Reserve addresses for a given handle's factory token. Used to compute
+// circulating supply (= 1B - lp_reserve_balance - reaction_reserve_balance).
+// Pulls from factory::get_token_record which returns the whole TokenRecord
+// struct as JSON; we only need the two reserve fields.
+export type TokenReserves = {
+  lp_reserve: string;
+  reaction_reserve: string;
+};
+export async function tokenReserves(rpc: RpcPool, handle: string): Promise<TokenReserves> {
+  const r = await rpc.viewFn<[Record<string, unknown>]>(
+    "factory::get_token_record",
+    [],
+    [handleBytes(handle)],
+    DESNET_PACKAGE,
+  );
+  const rec = r[0];
+  return {
+    lp_reserve: String(rec.lp_reserve),
+    reaction_reserve: String(rec.reaction_reserve),
+  };
+}
+
 // Gas-free quote — shells out to the pool's view fn.
 export async function quote(
   rpc: RpcPool,

@@ -11,12 +11,29 @@ export type TokenView = {
 
 const APT_TOKEN: TokenView = { symbol: "APT", icon: "/tokens/apt.svg" };
 
+/// Synchronously resolve from the bundled whitelist, so the common case
+/// (DESNET, USDC, …) renders with its curated SVG on the very first
+/// paint. Returns null when the addr isn't whitelisted (caller falls back
+/// to the on-chain metadata fetch).
+function whitelistView(metaAddr: string | null): TokenView | null {
+  if (!metaAddr) return null;
+  const lower = metaAddr.toLowerCase();
+  for (const t of Object.values(TOKENS)) {
+    if (t.meta.toLowerCase() === lower) {
+      return { symbol: t.symbol, icon: t.icon };
+    }
+  }
+  return null;
+}
+
 /// Resolve a $TOKEN view from its FA metadata addr. First checks the bundled
 /// TOKENS whitelist (so DESNET, DARBITEX, USDC etc. always render their
 /// curated SVGs), then falls back to the on-chain `Metadata.icon_uri` set
 /// by the token's creator at register_handle time.
 export function useTokenView(metaAddr: string | null): TokenView {
-  const [view, setView] = useState<TokenView>({ symbol: "?", icon: undefined });
+  // Whitelist hit is resolved synchronously — same render, no flicker.
+  const initial = whitelistView(metaAddr) ?? { symbol: "?" };
+  const [view, setView] = useState<TokenView>(initial);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,17 +41,12 @@ export function useTokenView(metaAddr: string | null): TokenView {
       setView({ symbol: "?" });
       return;
     }
-
-    // 1. Bundled whitelist
-    const lower = metaAddr.toLowerCase();
-    const hit = Object.values(TOKENS).find((t) => t.meta.toLowerCase() === lower);
+    const hit = whitelistView(metaAddr);
     if (hit) {
-      setView({ symbol: hit.symbol, icon: hit.icon });
+      setView(hit);
       return;
     }
-
-    // 2. On-chain metadata — uses the cached fetcher so repeated lookups are
-    //    free after the first round-trip.
+    // Not whitelisted — fall through to the on-chain metadata fetch (cached).
     fetchFaMetadata(metaAddr).then((m) => {
       if (cancelled || !m) return;
       setView({ symbol: m.symbol, icon: m.iconUri });

@@ -186,8 +186,9 @@ export function Register() {
       <p className="muted">
         Atomic on-chain registration: mints your PID Object NFT, spawns
         <code> $YOUR_TOKEN</code> (1B supply), seeds an APT/$TOKEN AMM pool with 5
-        APT + 50M tokens, and forever-locks your creator LP position. Handle is
-        immutable once registered.
+        APT + 50M tokens, and forever-locks your creator LP position. Handle/ticker
+        and token name are immutable once registered. Token icon, bio, and project
+        URI are mutable.
       </p>
 
       <label className="field">
@@ -224,7 +225,7 @@ export function Register() {
         <small className="muted">
           The human-readable display name shown by wallets. Distinct from the
           ticker symbol (<code>${tokenSymbol || "HANDLE"}</code>, always = handle).
-          Don't just put "{handle ? `${handle.charAt(0).toUpperCase()}${handle.slice(1)}` : "Alice"} Token" — make it a brand.
+          Don't just put "{handle ? `${handle.charAt(0).toUpperCase()}${handle.slice(1)}` : "Alice"} Token" — make it personal.
         </small>
       </label>
 
@@ -261,7 +262,7 @@ export function Register() {
       </label>
 
       <details>
-        <summary>Token icon + project URI (optional)</summary>
+        <summary>Token icon + project URI (optional) — you can set it later on your profile page</summary>
         <label className="field">
           <span>Icon URI</span>
           <input
@@ -302,7 +303,7 @@ export function Register() {
       </div>
 
       <p className="muted small">
-        Of the handle fee: 10% routes to the deployer multisig, 90% goes through
+        Of the handle fee: 10% routes to the @desnet multisig, 90% goes through
         the on-chain APT→DESNET buyback-burn (see About).
       </p>
 

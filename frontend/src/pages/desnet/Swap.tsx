@@ -3,12 +3,14 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAddress } from "../../wallet/useConnect";
 import { useFaBalance } from "../../chain/balance";
 import { createRpcPool, fromRaw, toRaw } from "../../chain/rpc-pool";
-import { DESNET_PACKAGE, SLIPPAGE, TOKENS } from "../../config";
+import { DESNET_FA, DESNET_PACKAGE, TOKENS } from "../../config";
+import { useSlippage } from "../../chain/slippage";
 import {
   computeAmountOut,
   reserves,
   tokenMetadataAddr,
 } from "../../chain/desnet/amm";
+import { PoolStatsPanel } from "../../components/desnet/PoolStatsPanel";
 import {
   handleBytes,
   isHandleRegistered,
@@ -26,16 +28,18 @@ const SWAP_APT_FOR_TOKEN_FN = `${DESNET_PACKAGE}::amm::swap_apt_for_token`;
 const SWAP_TOKEN_FOR_APT_FN = `${DESNET_PACKAGE}::amm::swap_token_for_apt`;
 
 const HANDLE_DEBOUNCE_MS = 350;
-const QUICK_HANDLES = ["desnet", "darbitex", "aptos", "apt", "d"];
 
 export function Swap() {
   const address = useAddress();
   const { signAndSubmitTransaction, connected } = useWallet();
   const aptPrice = useAptPriceUsd();
+  const [slippage] = useSlippage();
 
   const [handle, setHandle] = useState("desnet");
   const [resolvedHandle, setResolvedHandle] = useState<string | null>("desnet");
-  const [tokenMeta, setTokenMeta] = useState<string | null>(null);
+  // Pre-seed with DESNET_FA so the token icon resolves on first paint
+  // without waiting on the debounced view round-trip.
+  const [tokenMeta, setTokenMeta] = useState<string | null>(DESNET_FA);
   const [tokenSymbol, setTokenSymbol] = useState<string>("DESNET");
   const [poolReserves, setPoolReserves] = useState<{ apt: bigint; token: bigint } | null>(null);
 
@@ -54,7 +58,8 @@ export function Swap() {
   // Resolve handle → tokenMeta + reserves whenever the handle stabilises.
   useEffect(() => {
     setResolvedHandle(null);
-    setTokenMeta(null);
+    // Don't null tokenMeta here — keeping the prior value avoids a
+    // visible icon flicker while the debounce + view round-trip lands.
     setPoolReserves(null);
     if (!handle || handleErr) return;
     let cancelled = false;
@@ -73,6 +78,7 @@ export function Swap() {
         setError(null);
         const [aR, tR] = await reserves(rpc, handle);
         if (!cancelled) setPoolReserves({ apt: aR, token: tR });
+        // Supply / locked / burned breakdown is fetched inside PoolStatsPanel.
       } catch (e) {
         if (!cancelled) setError((e as Error).message ?? String(e));
       }
@@ -98,9 +104,9 @@ export function Swap() {
   const minOutRaw = useMemo(() => {
     if (amountOutRaw <= 0n) return 0n;
     const denom = 10_000n;
-    const slip = BigInt(Math.round(SLIPPAGE * Number(denom)));
+    const slip = BigInt(Math.round(slippage * Number(denom)));
     return (amountOutRaw * (denom - slip)) / denom;
-  }, [amountOutRaw]);
+  }, [amountOutRaw, slippage]);
 
   const fromBal = aptToToken ? aptBal : tokenBal;
   const toBal = aptToToken ? tokenBal : aptBal;
@@ -116,6 +122,36 @@ export function Swap() {
   const outUsd = !aptToToken && amountOutRaw > 0n
     ? usdValueOf(Number(fromRaw(amountOutRaw, 8)), "APT", aptPrice)
     : null;
+
+  // Spot rate from reserves (zero-input price), used by the bottom quote-box
+  // for price-impact calc. The full pool stats / MC / FDV / supply breakdown
+  // is inside <PoolStatsPanel/>.
+  const spotTokenPerApt = useMemo(() => {
+    if (!poolReserves || poolReserves.apt === 0n) return null;
+    return Number(poolReserves.token) / Number(poolReserves.apt);
+  }, [poolReserves]);
+  const spotAptPerToken = useMemo(() => {
+    if (spotTokenPerApt === null || spotTokenPerApt === 0) return null;
+    return 1 / spotTokenPerApt;
+  }, [spotTokenPerApt]);
+
+  const effectiveOutPerIn = useMemo(() => {
+    if (amountInRaw <= 0n || amountOutRaw <= 0n) return null;
+    const aIn = Number(fromRaw(amountInRaw, 8));
+    const aOut = Number(fromRaw(amountOutRaw, 8));
+    if (aIn <= 0) return null;
+    return aOut / aIn;
+  }, [amountInRaw, amountOutRaw]);
+  const spotOutPerIn = aptToToken ? spotTokenPerApt : spotAptPerToken;
+  const priceImpactBps = useMemo(() => {
+    if (spotOutPerIn === null || effectiveOutPerIn === null || spotOutPerIn === 0) return null;
+    return Math.round(((spotOutPerIn - effectiveOutPerIn) / spotOutPerIn) * 10_000);
+  }, [spotOutPerIn, effectiveOutPerIn]);
+  const lpFeeIn = useMemo(() => {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return (n * 10) / 10_000; // 10 bps, all on input side
+  }, [amount]);
 
   async function submit() {
     if (!resolvedHandle || amountInRaw <= 0n) return;
@@ -151,11 +187,30 @@ export function Swap() {
   const canSubmit =
     !!address && !!resolvedHandle && amountInRaw > 0n && !insufficient && !submitting;
 
+  function fmtRate(n: number | null, digits: number = 6): string {
+    if (n === null || !Number.isFinite(n)) return "—";
+    if (n === 0) return "0";
+    if (n >= 1_000_000) return n.toExponential(3);
+    if (n < 0.000001) return n.toExponential(3);
+    return n.toFixed(digits);
+  }
+  function impactColor(bps: number | null): string {
+    if (bps === null) return "";
+    if (bps < 30) return "good";
+    if (bps < 100) return "warn";
+    return "bad";
+  }
+
   return (
     <>
-      <h2 className="page-title">Swap APT ↔ $TOKEN</h2>
+      <h2 className="page-title">
+        Swap APT ↔ <span style={{ display: "inline-flex", alignItems: "center", gap: 6, verticalAlign: "middle" }}>
+          <TokenIcon token={tokenView} size={22} />
+          ${tokenSymbol}
+        </span>
+      </h2>
       <p className="page-sub">
-        Per-handle AMM. 10 bps fee, 100% to LP. Type a handle below or pick a quick choice.
+        Per-handle AMM. 10 bps fee, 100% to LP.
       </p>
 
       <div className="swap-card">
@@ -176,34 +231,15 @@ export function Swap() {
               </span>
             </span>
           </div>
-          <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <span className="muted small">Quick:</span>
-            {QUICK_HANDLES.map((q) => (
-              <button
-                key={q}
-                type="button"
-                className="link small"
-                onClick={() => setHandle(q)}
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: 8,
-                  background: handle === q ? "#1a4480" : "transparent",
-                  color: handle === q ? "#fff" : undefined,
-                  border: "1px solid #444",
-                }}
-              >
-                ${q}
-              </button>
-            ))}
-          </div>
           {handleErr && <small className="error">{handleErr}</small>}
-          {poolReserves && (
-            <small className="muted" style={{ marginTop: 4, display: "block" }}>
-              Pool: <strong>{Number(fromRaw(poolReserves.apt, 8)).toLocaleString()}</strong> APT ·{" "}
-              <strong>{Number(fromRaw(poolReserves.token, 8)).toLocaleString()}</strong> ${tokenSymbol}
-            </small>
-          )}
         </div>
+
+        <PoolStatsPanel
+          handle={resolvedHandle}
+          tokenMeta={tokenMeta}
+          tokenSymbol={tokenSymbol}
+          poolReserves={poolReserves}
+        />
 
         {/* Input row */}
         <div className="swap-row">
@@ -287,14 +323,44 @@ export function Swap() {
         </div>
       </div>
 
-      {/* Slippage + min-out summary, mirroring Trade.tsx layout */}
-      {amountOutRaw > 0n && (
-        <div className="venue-table" style={{ marginTop: 12 }}>
-          <div className="venue-row">
-            <span className="venue-name">Min received ({(SLIPPAGE * 100).toFixed(2)}% slip)</span>
-            <span className="venue-route">{aptToToken ? `→ ${tokenSymbol}` : `→ APT`}</span>
-            <span className="venue-out">
-              <strong>{Number(fromRaw(minOutRaw, 8)).toFixed(6)}</strong> {outSymbol}
+      {amountInRaw > 0n && poolReserves && (
+        <div className="quote-box" style={{ marginTop: 12 }}>
+          <div className="quote-row">
+            <span className="dim">Spot rate</span>
+            <span>
+              {spotOutPerIn === null
+                ? "—"
+                : `1 ${inSymbol} = ${fmtRate(spotOutPerIn)} ${outSymbol}`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Effective rate</span>
+            <span>
+              {effectiveOutPerIn === null
+                ? "—"
+                : `1 ${inSymbol} = ${fmtRate(effectiveOutPerIn)} ${outSymbol}`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Price impact</span>
+            <span className={`impact-${impactColor(priceImpactBps)}`}>
+              {priceImpactBps === null ? "—" : `${(priceImpactBps / 100).toFixed(2)}%`}
+            </span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">LP fee (10 bps)</span>
+            <span>{lpFeeIn === null ? "—" : `${fmtRate(lpFeeIn)} ${inSymbol}`}</span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Slippage tolerance</span>
+            <span>{(slippage * 100).toFixed(2)}%</span>
+          </div>
+          <div className="quote-row">
+            <span className="dim">Min received</span>
+            <span>
+              {minOutRaw === 0n
+                ? "—"
+                : `${Number(fromRaw(minOutRaw, 8)).toFixed(6)} ${outSymbol}`}
             </span>
           </div>
         </div>
